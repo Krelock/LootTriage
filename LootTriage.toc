@@ -1,0 +1,19 @@
+## Interface: 16001, 120100, 120105
+## Title: LootTriage
+## Notes: Looting with full bags? Shows which loot is worth taking and which items to delete.
+## Author: Krelock
+## Version: 1.1.1
+## SavedVariables: LootTriageDB
+## OptionalDeps: Auctionator
+## IconTexture: Interface\Icons\INV_Misc_Bag_08
+## Category: Inventory
+
+QuestItems.lua
+LootTriage.lua
+Quests.lua
+Bags.lua
+Sorting.lua
+Loot.lua
+Tooltip.lua
+WhatsNew.lua
+Settings.lua
