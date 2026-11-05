@@ -91,7 +91,8 @@ local function AddTooltipLine(tooltip, data)
         end
     end
 
-    if not loot.session or next(lootPairs) == nil or not IsInside(owner, LootFrame) then return end
+    if not loot.session or next(lootPairs) == nil then return end
+    if not (IsInside(owner, LootFrame) or IsInside(owner, PlumberLootWindow)) then return end
     local lootSlot = LootSlotOf(owner) or (owner:GetParent() and LootSlotOf(owner:GetParent()))
     local pair = lootSlot and lootPairs[lootSlot]
     if not pair or not pair.worth or not PairValid(pair) then return end

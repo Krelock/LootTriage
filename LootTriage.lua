@@ -377,11 +377,7 @@ local function OnAddonLoaded()
     ns.CollectContainerFrames()
     ns.HookContainerFrames()
     ns.HookLootRows()
-    -- No settings page with WoW Forever's gamepad UI on: closing Options after
-    -- an addon's page showed gets blocked, and the popup loops until the game freezes.
-    local gamepadUI = C_InputInterfaceStyle and Enum.InputDeviceInterfaceType
-        and C_InputInterfaceStyle.GetCurrentStyle() == Enum.InputDeviceInterfaceType.Gamepad
-    if Settings and Settings.RegisterVerticalLayoutCategory and not gamepadUI then
+    if Settings and Settings.RegisterVerticalLayoutCategory then
         local ok, err = pcall(ns.RegisterSettings)
         if not ok then
             Print("couldn't create the settings panel: " .. tostring(err))

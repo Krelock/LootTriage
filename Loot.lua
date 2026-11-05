@@ -17,7 +17,7 @@ local LOOT_SLOT_ITEM = (Enum.LootSlotType and Enum.LootSlotType.Item) or 1
 local GetItemFamily = (C_Item and C_Item.GetItemFamily) or GetItemFamily
 local band = bit and bit.band
 
-local SHOW_OFF, REAGENT_BAG, LAST_ANY_BAG = ns.SHOW_OFF, ns.REAGENT_BAG, ns.LAST_ANY_BAG
+local SHOW_OFF, LAST_BAG, LAST_ANY_BAG = ns.SHOW_OFF, ns.LAST_BAG, ns.LAST_ANY_BAG
 local events, loot, lootPairs, candidates = ns.events, ns.loot, ns.lootPairs, ns.candidates
 local SlotKey, FreeSlots, ItemIDFromLink, ScanBags = ns.SlotKey, ns.FreeSlots, ns.ItemIDFromLink, ns.ScanBags
 local WaitForItemInfo, ExactSellPrice, ItemWorth = ns.WaitForItemInfo, ns.ExactSellPrice, ns.ItemWorth
@@ -51,17 +51,14 @@ local usedSlots, brokenPairs = {}, {}
 local stacks = { count = {}, items = {}, counted = false }
 
 -- Whether loot fits without a free regular slot: on stacks with room between
--- them, in a profession bag that takes it, or (a crafting reagent) the reagent bag.
-local function HasRoomElsewhere(itemID, quantity, maxStack, isCraftingReagent)
+-- them, or in a profession bag that takes it. Free slots in the reagent bag's
+-- slot never count: Forever puts profession bags there that take far less.
+local function HasRoomElsewhere(itemID, quantity, maxStack)
     local itemFamily = GetItemFamily and GetItemFamily(itemID) or 0
-    for bag = 0, LAST_ANY_BAG do
+    for bag = 0, LAST_BAG do
         local free, family = GetContainerNumFreeSlots(bag)
-        if (free or 0) > 0 then
-            if bag == REAGENT_BAG then
-                if isCraftingReagent then return true end
-            elseif (family or 0) ~= 0 and band and itemFamily ~= 0 and band(itemFamily, family) ~= 0 then
-                return true
-            end
+        if (free or 0) > 0 and (family or 0) ~= 0 and band and itemFamily ~= 0 and band(itemFamily, family) ~= 0 then
+            return true
         end
     end
     if maxStack > 1 then
@@ -97,7 +94,7 @@ local function EvaluateLoot(lootSlot)
 
     local _, _, quantity, _, _, _, isQuestItem = GetLootSlotInfo(lootSlot)
     quantity = quantity or 1
-    local _, _, quality, _, _, _, _, maxStack, _, _, sellPrice, _, _, bindType, _, _, isCraftingReagent = GetItemInfo(itemID)
+    local _, _, quality, _, _, _, _, maxStack, _, _, sellPrice, _, _, bindType = GetItemInfo(itemID)
     if not maxStack then
         WaitForItemInfo(itemID)
         if isQuestItem then return "quest", 0 end
@@ -105,7 +102,7 @@ local function EvaluateLoot(lootSlot)
     end
     -- Loot that binds when picked up (1) and gray loot go by the vendor's price.
     sellPrice = ItemWorth(link, ExactSellPrice(link, sellPrice), bindType == 1 or quality == 0)
-    if HasRoomElsewhere(itemID, quantity, maxStack, isCraftingReagent) then
+    if HasRoomElsewhere(itemID, quantity, maxStack) then
         return "fits", isQuestItem and huge or (sellPrice or 0) * quantity
     end
     if isQuestItem then return "quest", 0 end
@@ -238,22 +235,40 @@ end
 -- Coins
 ---------------------------------------------------------------------------
 
--- fn(row) for each row of Blizzard's loot window: its scroll list, or older
--- clients' numbered buttons.
+-- Plumber's Loot Window, which replaces Blizzard's: its rows.
+local function PlumberRows()
+    local window = PlumberLootWindow
+    local rows = type(window) == "table" and window.activeFrames
+    return type(rows) == "table" and rows or nil
+end
+
+-- fn(row) for each row of the loot window: Blizzard's scroll list, older
+-- clients' numbered buttons, or Plumber's rows.
 local function ForEachLootButton(fn)
-    if LootFrame.ScrollBox and LootFrame.ScrollBox.ForEachFrame then
-        LootFrame.ScrollBox:ForEachFrame(fn)
-    else
-        for i = 1, (LOOTFRAME_NUMBUTTONS or 4) do
-            local button = _G["LootButton" .. i]
-            if button and button:IsShown() then fn(button) end
+    if LootFrame:IsShown() then
+        if LootFrame.ScrollBox and LootFrame.ScrollBox.ForEachFrame then
+            LootFrame.ScrollBox:ForEachFrame(fn)
+        else
+            for i = 1, (LOOTFRAME_NUMBUTTONS or 4) do
+                local button = _G["LootButton" .. i]
+                if button and button:IsShown() then fn(button) end
+            end
         end
+    end
+    local rows = PlumberRows()
+    if rows then
+        for _, row in ipairs(rows) do fn(row) end
     end
 end
 
--- The loot slot a row shows.
+-- The loot slot a row shows (a Plumber row keeps it in its data).
 local function LootSlotOf(button)
     if button.GetSlotIndex then return button:GetSlotIndex() end
+    local plumber = PlumberLootWindow
+    if plumber and button.lootFrame == plumber then
+        local data = button.data
+        return type(data) == "table" and data.slotIndex or nil
+    end
     return button.slot
 end
 
@@ -268,9 +283,10 @@ local function UpdateLootMark(button)
         return
     end
     if not mark then
-        mark = button:CreateTexture(nil, "OVERLAY", nil, 7)
+        -- Plumber's icon is a frame of its own, drawn over its row.
+        mark = (button.IconFrame or button):CreateTexture(nil, "OVERLAY", nil, 7)
         mark:SetSize(18, 18)
-        mark:SetPoint("CENTER", button.Item or button, "TOPRIGHT", -4, -4)
+        mark:SetPoint("CENTER", button.Item or button.IconFrame or button, "TOPRIGHT", -4, -4)
         mark:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon") -- the money display's gold coin
         lootMarks[button] = mark
     end
@@ -286,9 +302,24 @@ local function OnLootRowInitialized(_, button)
     if ns.db then UpdateLootMark(button) end
 end
 
--- Once, when the loot window exists.
-local lootRowsHooked = false
+-- Plumber lays out its rows each time it fills them (the loot opening, a
+-- failed auto loot, ...).
+local function OnPlumberLayout()
+    if not ns.db then return end
+    local rows = PlumberRows()
+    if rows then
+        for _, row in ipairs(rows) do UpdateLootMark(row) end
+    end
+end
+
+-- Once, when the loot window exists (Plumber loads after LootTriage).
+local lootRowsHooked, plumberHooked = false, false
 local function HookLootRows()
+    if not plumberHooked and type(PlumberLootWindow) == "table"
+        and type(PlumberLootWindow.LayoutActiveFrames) == "function" then
+        hooksecurefunc(PlumberLootWindow, "LayoutActiveFrames", OnPlumberLayout)
+        plumberHooked = true
+    end
     if lootRowsHooked or not LootFrame or not LootFrame.ScrollBox then return end
     if ScrollUtil and ScrollUtil.AddInitializedFrameCallback then
         ScrollUtil.AddInitializedFrameCallback(LootFrame.ScrollBox, OnLootRowInitialized, events, false)
@@ -323,13 +354,19 @@ local function RetryLootSoon()
     After(LOOT_RETRY_DELAY, RetryLoot)
 end
 
+-- A loot addon that replaces Blizzard's window (Plumber's Loot Window) takes
+-- the loot event from it: then there's no window to wait for.
+local function BlizzardLootWindowInUse()
+    return not LootFrame.IsEventRegistered or LootFrame:IsEventRegistered("LOOT_OPENED")
+end
+
 -- The pairing started (or started again when out of date), or kept up with
 -- what was looted or deleted; then the coins.
 local function RefreshLoot()
     lootQueued = false
     HideLootMarks()
     if not loot.open or (not ns.db.lootAdvice and ns.db.highlightMode == SHOW_OFF) then return end
-    if not LootFrame or not LootFrame:IsShown() then
+    if not LootFrame or (not LootFrame:IsShown() and BlizzardLootWindowInUse()) then
         if GetNumLootItems() > 0 then RetryLootSoon() end
         return
     end
