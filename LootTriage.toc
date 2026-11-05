@@ -2,7 +2,7 @@
 ## Title: LootTriage
 ## Notes: Looting with full bags? Shows which loot is worth taking and which items to delete.
 ## Author: Krelock
-## Version: 1.1.4
+## Version: 1.1.5
 ## SavedVariables: LootTriageDB
 ## OptionalDeps: Auctionator
 ## IconTexture: Interface\Icons\INV_Misc_Bag_08

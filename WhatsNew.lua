@@ -7,6 +7,12 @@ local ipairs = ipairs
 -- Newest version first; one without a version uses the .toc's. An item is
 -- { name (in gold), what it does }, or a line.
 local WHATS_NEW = {
+    { version = "1.1.5",
+        { "Changes", {
+            "While you loot with full bags, the bag items worth deleting for your loot now sparkle with the animated proc glow. Other highlights keep the still gold border, so you can see which swaps are worth making without guessing.",
+            "The Animated glow setting is gone.",
+        } },
+    },
     { version = "1.1.0",
         { "New", {
             { "Settings pages (nothing to set).", "The settings are split into pages: LootTriage, Never highlight, Quests, Sorting and Auctionator. Click the plus next to LootTriage in the list to see them." },

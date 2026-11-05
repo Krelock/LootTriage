@@ -23,6 +23,7 @@ local NeededForQuest = ns.NeededForQuest
 
 local rankBySlot = {}  -- [slotKey] = the number shown
 local entryBySlot = {} -- [slotKey] = its candidate or loot pair, for the tooltip
+local shinyBySlot = {} -- [slotKey] = true: its loot is worth more, so it sparkles
 local overlays = {}    -- [bag button] = its highlight
 local containerFrames = {}
 
@@ -90,10 +91,10 @@ local function GetOverlay(button)
     return o
 end
 
--- A still gold border, or with Animated glow the marching ants too (the only
--- time anything runs each frame).
-local function ApplyGlowStyle(o)
-    if ns.db.animatedGlow then
+-- A still gold border, or the marching ants too on a bag item worth swapping
+-- for its loot (the only time anything runs each frame).
+local function ApplyGlowStyle(o, shiny)
+    if shiny then
         if not o.animated then
             o.ants:Show()
             o:SetScript("OnUpdate", AnimateProcGlow)
@@ -318,7 +319,7 @@ local function UpdateBagButton(button, bag, slot)
     local rank = rankBySlot[key]
     if rank then
         local o = GetOverlay(button)
-        ApplyGlowStyle(o)
+        ApplyGlowStyle(o, shinyBySlot[key])
         o.text:SetText(rank)
         o.rank = rank
         o.entry = entryBySlot[key]
@@ -392,6 +393,7 @@ end
 local function ApplyHighlights()
     wipe(rankBySlot)
     wipe(entryBySlot)
+    wipe(shinyBySlot)
     local mode = ns.db.highlightMode
     if not loot.session and GetTime() < previewUntil then
         ApplyPreview()
@@ -402,6 +404,7 @@ local function ApplyHighlights()
                     local key = SlotKey(pair.bag, pair.slot)
                     rankBySlot[key] = pair.rank
                     entryBySlot[key] = pair
+                    shinyBySlot[key] = pair.worth
                 end
             end
         elseif mode == SHOW_ALWAYS or (mode == SHOW_NEARLY_FULL and FreeSlots() <= NEARLY_FULL_SLOTS) then

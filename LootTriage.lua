@@ -40,7 +40,6 @@ local IS_RETAIL = (select(4, GetBuildInfo()) or 0) >= 100000
 
 local defaults = {
     highlightMode = SHOW_LOOTING, -- when bag items are highlighted
-    animatedGlow = false,   -- the proc glow's marching ants, not a still border
     count = 5,              -- items highlighted outside looting
     maxQuality = IS_RETAIL and 2 or 1, -- 0 grays only, 1 and whites, 2 and greens
     keepConsumables = true, -- never highlighted: potions, food, scrolls...

@@ -88,8 +88,6 @@ local function RegisterSettings()
         "When to highlight items in your bags. While looting with full bags, your bags show what to delete for each loot item. Loot coins and sorting work in every mode.")
     Slider("count", "Items to highlight", 1, 20,
         "How many of your cheapest items get highlighted when not looting. Only used with \"When bags are nearly full\" and \"Always\".")
-    Checkbox("animatedGlow", "Animated glow",
-        "Use the animated ability proc glow (sparkling border) instead of a still gold border.")
     -- No search tags (false): from addon code they'd be tainted, and the settings
     -- search reads every row's, so Blizzard's actions in its results get blocked.
     if CreateSettingsButtonInitializer then
