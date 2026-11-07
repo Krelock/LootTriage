@@ -1,5 +1,5 @@
 -- LootTriage's settings: its page under Options > AddOns, with the Never
--- highlight, Quests, Sorting and Auctionator pages under it, and /lt.
+-- highlight, Quests, Sorting and Auction prices pages under it, and /lt.
 --
 -- Sections: Settings pages, Slash commands.
 local _, ns = ...
@@ -145,18 +145,18 @@ local function RegisterSettings()
     Checkbox("closeGaps", "Close gaps after sorting",
         "After your junk is moved, your other items move up too, so no empty slots are left between them. They keep the order the sort gave them. Takes a little longer. Not used when Junk after sorting is Off.")
 
-    -- Without Auctionator the rows are grayed out and their tooltips say why. Only
+    -- Without a price addon the rows are grayed out and their tooltips say why. Only
     -- the row reads its modify predicates (not the search), so they can't taint it.
-    Page("Auctionator")
-    local needs = not ns.auctionator and "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode("Needs the Auctionator addon. Install it to use this.") or ""
-    local function NeedsAuctionator(initializer)
-        if not ns.auctionator then initializer:AddModifyPredicate(function() return false end) end
+    Page("Auction prices")
+    local needs = not ns.priceAddon and "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode("Needs Auctionator or Blackthornes Tradeskills. Install one to use this.") or ""
+    local function NeedsPriceAddon(initializer)
+        if not ns.priceAddon then initializer:AddModifyPredicate(function() return false end) end
     end
-    NeedsAuctionator(Checkbox("auctionPrices", "Auction prices",
+    NeedsPriceAddon(Checkbox("auctionPrices", "Auction prices",
         "Count an item as worth its auction price when that's more than a vendor pays. Gray items, soulbound items and prices older than Price age use the vendor price." .. needs))
-    NeedsAuctionator(Slider("auctionMaxAge", "Price age", 1, 30,
+    NeedsPriceAddon(Slider("auctionMaxAge", "Price age", 1, 30,
         "Auction prices older than this many days use the vendor price instead." .. needs))
-    NeedsAuctionator(Slider("auctionCutPercent", "Auction house cut", 0, 15,
+    NeedsPriceAddon(Slider("auctionCutPercent", "Auction house cut", 0, 15,
         "How much of each auction price the auction house keeps." .. needs,
         function(value) return ("%d%%"):format(value) end))
 

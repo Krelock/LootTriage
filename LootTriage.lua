@@ -57,7 +57,7 @@ local defaults = {
     sortCorner = SORT_BOTTOM_RIGHT, -- where junk goes after a bag sort
     closeGaps = false,      -- the other items close up after a sort
     lootAdvice = true,      -- coins on loot when bags are full
-    auctionPrices = false,  -- Auctionator's price when it's above the vendor's
+    auctionPrices = false,  -- the auction price when it's above the vendor's
     auctionMaxAge = 14,     -- days
     auctionCutPercent = 0,
     keep = {},              -- [itemID] = true: starred, never suggested
@@ -211,9 +211,12 @@ end
 
 -- Auction prices: Auctionator's API for other addons (Auctionator.API.v1, as in
 -- Auctionator 340) gives the last price seen for one of an item, in copper, and
--- its age in days. Its calls error on bad arguments, hence the pcall. Answers
--- are kept until the auction house closes, the only place prices change.
-local auctionator
+-- its age in days. Its calls error on bad arguments, hence the pcall. Without
+-- Auctionator, Blackthornes Tradeskills' BlackthornesTS_API (version 1) gives
+-- the same in copper and seconds; its age is only for its own scans, so prices
+-- it takes from elsewhere have none and don't count. Answers are kept until the
+-- auction house closes, the only place prices change.
+local auctionator, blackthornes, priceAddon
 local auctionCache = {} -- [link] = copper, false: no price
 local auctionAges = {}  -- [link] = days, false: not known
 
@@ -222,12 +225,23 @@ local function AskAuctionator(call, link)
     if ok and type(result) == "number" then return result end
 end
 
+local function AskBlackthornes(call, link)
+    local ok, result = pcall(blackthornes[call], link)
+    if ok and type(result) == "number" then return result end
+end
+
 -- The auction price for one, less the cut; nil without a recent one.
 local function AuctionPrice(link)
     local price = auctionCache[link]
     if price == nil then
-        price = AskAuctionator("GetAuctionPriceByItemLink", link) or false
-        auctionAges[link] = price and AskAuctionator("GetAuctionAgeByItemLink", link) or false
+        if auctionator then
+            price = AskAuctionator("GetAuctionPriceByItemLink", link) or false
+            auctionAges[link] = price and AskAuctionator("GetAuctionAgeByItemLink", link) or false
+        else
+            price = AskBlackthornes("GetPrice", link) or false
+            local seconds = price and AskBlackthornes("GetPriceAge", link)
+            auctionAges[link] = seconds and floor(seconds / 86400) or false
+        end
         auctionCache[link] = price
     end
     local age = auctionAges[link]
@@ -241,7 +255,7 @@ end
 -- true too). vendorOnly: soulbound or gray items, always at the vendor's price.
 local function ItemWorth(link, sellPrice, vendorOnly)
     sellPrice = sellPrice or 0
-    if db.auctionPrices and auctionator and link and not vendorOnly then
+    if db.auctionPrices and priceAddon and link and not vendorOnly then
         local price = AuctionPrice(link)
         if price and price > sellPrice then return price, true end
     end
@@ -365,11 +379,18 @@ local function OnAddonLoaded()
     db = LootTriageDB
     ns.db = db
 
-    -- Auctionator, if installed (the .toc's OptionalDeps loads it first).
+    -- A price addon, if installed (the .toc's OptionalDeps loads it first):
+    -- Auctionator, else Blackthornes Tradeskills.
     local api = type(Auctionator) == "table" and type(Auctionator.API) == "table" and Auctionator.API.v1
+    local bts = BlackthornesTS_API
     if type(api) == "table" then
         auctionator = api
-        ns.auctionator = api
+    elseif type(bts) == "table" and type(bts.GetPrice) == "function" and type(bts.GetPriceAge) == "function" then
+        blackthornes = bts
+    end
+    if auctionator or blackthornes then
+        priceAddon = true
+        ns.priceAddon = true
         events:RegisterEvent("AUCTION_HOUSE_CLOSED")
     end
 
@@ -412,7 +433,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_DATA_LOAD_RESULT" then
         ns.OnQuestLogUpdate(event)
     elseif event == "AUCTION_HOUSE_CLOSED" then
-        -- Auctionator may have new prices.
+        -- The price addon may have new prices.
         wipe(auctionCache)
         if db.auctionPrices and ns.BagsOpen() then ns.QueueRebuild() end
     elseif event == "PLAYER_LEVEL_UP" then
