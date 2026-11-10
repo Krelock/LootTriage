@@ -5,7 +5,7 @@
 --   QuestItems.lua  items the original game's quests ask for (generated)
 --   LootTriage.lua  settings, the bag scan, loading and events
 --   Quests.lua      items quests need
---   Bags.lua        highlights, stars and quest marks in the bags
+--   Bags.lua        highlights, kept items and quest marks in the bags
 --   Sorting.lua     junk to a corner after Blizzard's sort
 --   Loot.lua        coins on loot when bags are full
 --   Tooltip.lua     LootTriage's tooltip lines
@@ -60,11 +60,11 @@ local defaults = {
     auctionPrices = false,  -- the auction price when it's above the vendor's
     auctionMaxAge = 14,     -- days
     auctionCutPercent = 0,
-    keep = {},              -- [itemID] = true: starred, never suggested
-    keepClick = 3,          -- the click that stars a bag item (KEEP_CLICKS, 0 off)
+    keep = {},              -- [itemID] = true: kept, never suggested
+    keepClick = 3,          -- the click that keeps a bag item (KEEP_CLICKS, 0 off)
 }
 
--- Clicks that star a bag item.
+-- Clicks that keep a bag item.
 local KEEP_CLICKS = {
     [1] = { name = "Ctrl+Left-click", ctrl = true, button = "LeftButton" },
     [2] = { name = "Ctrl+Right-click", ctrl = true, button = "RightButton" },

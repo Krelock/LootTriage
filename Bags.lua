@@ -1,8 +1,8 @@
 -- LootTriage in your bags: the highlight (a gold glow and a number) on what to
--- delete, the star on items you keep and the quest mark, on Blizzard's bag
+-- delete, the gold border on items you keep and the quest mark, on Blizzard's bag
 -- buttons and on bag addons' buttons made from Blizzard's template.
 --
--- Sections: Glow, Bag windows, Stars and quest marks, Highlights.
+-- Sections: Glow, Bag windows, Kept items and quest marks, Highlights.
 local _, ns = ...
 
 local GetContainerItemInfo = C_Container.GetContainerItemInfo
@@ -223,10 +223,10 @@ local function ForEachBagButton(fn)
 end
 
 ---------------------------------------------------------------------------
--- Stars and quest marks
+-- Kept items and quest marks
 ---------------------------------------------------------------------------
 
-local stars = {}       -- [bag button] = star texture
+local keepBorders = {} -- [bag button] = gold border texture
 local anyKept = false
 
 local function SetKeep(itemID, keep)
@@ -244,7 +244,7 @@ local function ToggleKeep(itemID)
     if GameTooltip:IsShown() and GameTooltip.RefreshData then GameTooltip:RefreshData() end
 end
 
--- The click that stars a bag item. A modified click never uses or picks up an
+-- The click that keeps a bag item. A modified click never uses or picks up an
 -- item in the default bags.
 local hookedBagButtons = {}
 
@@ -274,16 +274,20 @@ local function HookBagButton(button)
     button:HookScript("OnClick", OnBagItemClick)
 end
 
-local function ShowStar(button)
-    local star = stars[button]
-    if not star then
-        star = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        star:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
-        star:SetSize(14, 14)
-        star:SetPoint("TOPRIGHT", -2, -2)
-        stars[button] = star
+-- Blizzard's gold loot toast border, as much bigger than the button as on the
+-- toast (58 to 52), so it shows on light icons too.
+local function ShowKeepBorder(button)
+    local border = keepBorders[button]
+    if not border then
+        local w, h = button:GetWidth() or 37, button:GetHeight() or 37
+        if w == 0 then w, h = 37, 37 end
+        border = button:CreateTexture(nil, "OVERLAY", nil, 6)
+        border:SetAtlas("loottoast-itemborder-gold")
+        border:SetPoint("TOPLEFT", -w * 3 / 52, h * 3 / 52)
+        border:SetPoint("BOTTOMRIGHT", w * 3 / 52, -h * 3 / 52)
+        keepBorders[button] = border
     end
-    star:Show()
+    border:Show()
 end
 
 -- Mark quest items: Blizzard's quest "!" where a highlight's number would go (a
@@ -310,7 +314,7 @@ local function UpdateQuestMark(button, bag, slot, itemID)
     mark:Show()
 end
 
--- One bag button: its highlight, star and quest mark.
+-- One bag button: its highlight, gold border and quest mark.
 local function UpdateBagButton(button, bag, slot)
     -- The bags make buttons as they need them, so each is hooked when it's seen.
     HookBagButton(button)
@@ -327,18 +331,18 @@ local function UpdateBagButton(button, bag, slot)
     end
     if anyKept or ns.db.questMark then
         local info = GetContainerItemInfo(bag, slot)
-        if info and ns.db.keep[info.itemID] then ShowStar(button) end
+        if info and ns.db.keep[info.itemID] then ShowKeepBorder(button) end
         if info and ns.db.questMark then UpdateQuestMark(button, bag, slot, info.itemID) end
     end
 end
 
--- Hides every highlight, star and mark, then draws them on the buttons on screen.
+-- Hides every highlight, border and mark, then draws them on the buttons on screen.
 local function RefreshOverlays()
     for _, o in pairs(overlays) do
         o:Hide()
         o.entry = nil
     end
-    for _, star in pairs(stars) do star:Hide() end
+    for _, border in pairs(keepBorders) do border:Hide() end
     for _, mark in pairs(questMarks) do mark:Hide() end
     anyKept = next(ns.db.keep) ~= nil
     ForEachBagButton(UpdateBagButton)

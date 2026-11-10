@@ -7,6 +7,11 @@ local ipairs = ipairs
 -- Newest version first; one without a version uses the .toc's. An item is
 -- { name (in gold), what it does }, or a line.
 local WHATS_NEW = {
+    { version = "1.1.7",
+        { "Changes", {
+            "Items you keep (Alt+Left-click in your bags) now get a gold border around them instead of the small star, so you can see it on light icons like potions and scrolls.",
+        } },
+    },
     { version = "1.1.6",
         { "New", {
             { "Blackthornes Tradeskills prices (nothing to set).", "Without Auctionator, Auction prices uses the prices Blackthornes Tradeskills scanned. Turn on Auction prices on the Auction prices page." },

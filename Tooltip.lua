@@ -1,5 +1,5 @@
 -- LootTriage's lines in item tooltips, added after Blizzard builds them:
--- starred items, items a quest needs, delete candidates with their number and
+-- kept items, items a quest needs, delete candidates with their number and
 -- value, and in the loot window what to delete to make room.
 local _, ns = ...
 
@@ -20,7 +20,7 @@ local function IsInside(frame, ancestor)
     return false
 end
 
--- The click that stars a bag item ("Alt+Left-click"), for the tooltip in the bags.
+-- The click that keeps a bag item ("Alt+Left-click"), for the tooltip in the bags.
 local function KeepHint(inBags)
     local click = inBags and KEEP_CLICKS[ns.db.keepClick]
     return click and click.name

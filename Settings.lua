@@ -106,7 +106,7 @@ local function RegisterSettings()
         return container:GetData()
     end
     CreateDropdown(category, Setting("keepClick", "Click in bags"), KeepClickOptions,
-        "Click an item in your bags this way to give it a star: it will never be suggested for deletion. Click again to undo. Note: in the default game, Ctrl+click also previews gear in the dressing room.")
+        "Click an item in your bags this way to give it a gold border: it will never be suggested for deletion. Click again to undo. Note: in the default game, Ctrl+click also previews gear in the dressing room.")
 
     Page("Never highlight")
     Checkbox("keepConsumables", "Consumables",
@@ -202,7 +202,7 @@ local function ShowHelp()
     print(("  /lt test - show the highlights for %d seconds (open your bags to see them)"):format(PREVIEW_SECONDS))
     print("  /lt keep [item] - never suggest an item for deletion (shift-click it into chat)")
     print("  /lt unkeep [item] - allow an item to be suggested again")
-    print("  /lt keeplist - list starred items")
+    print("  /lt keeplist - list kept items")
 end
 
 -- /lt and its commands (ShowHelp lists them).
@@ -237,10 +237,10 @@ local function HandleSlash(msg)
         Print(link .. (cmd == "keep" and " will never be suggested for deletion." or " can be suggested for deletion again."))
     elseif cmd == "keeplist" then
         if next(ns.db.keep) == nil then
-            Print("no starred items.")
+            Print("no kept items.")
             return
         end
-        Print("starred items (never suggested for deletion):")
+        Print("kept items (never suggested for deletion):")
         for id in pairs(ns.db.keep) do
             print("  " .. (select(2, GetItemInfo(id)) or ("item " .. id)))
         end
