@@ -58,6 +58,7 @@ local defaults = {
     closeGaps = false,      -- the other items close up after a sort
     lootAdvice = true,      -- coins on loot when bags are full
     auctionPrices = false,  -- the auction price when it's above the vendor's
+    priceSource = "",       -- the price addon used (PRICE_SOURCES' key; the first installed)
     auctionMaxAge = 14,     -- days
     auctionCutPercent = 0,
     keep = {},              -- [itemID] = true: kept, never suggested
@@ -209,39 +210,88 @@ local function ExactSellPrice(link, sellPrice)
     return sellPrice
 end
 
--- Auction prices: Auctionator's API for other addons (Auctionator.API.v1, as in
--- Auctionator 340) gives the last price seen for one of an item, in copper, and
--- its age in days. Its calls error on bad arguments, hence the pcall. Without
--- Auctionator, Blackthornes Tradeskills' BlackthornesTS_API (version 1) gives
--- the same in copper and seconds; its age is only for its own scans, so prices
--- it takes from elsewhere have none and don't count. Answers are kept until the
--- auction house closes, the only place prices change.
-local auctionator, blackthornes, priceAddon
+-- Auction prices from other addons' APIs, in the order the first installed one
+-- is picked. Ask(api, link) returns the price of one in copper and its age in
+-- days; a price without an age isn't used. Their calls can error, hence the
+-- pcall. Answers are kept until the auction house closes, the only place
+-- prices change.
+local function Number(ok, result)
+    if ok and type(result) == "number" then return result end
+end
+
+local function Days(seconds)
+    return seconds and floor(seconds / 86400)
+end
+
+local PRICE_SOURCES = {
+    -- Auctionator.API.v1 (Auctionator 340): the last lowest price seen.
+    { key = "Auctionator", name = "Auctionator",
+      Find = function()
+          local api = type(Auctionator) == "table" and type(Auctionator.API) == "table" and Auctionator.API.v1
+          return type(api) == "table" and api
+      end,
+      Ask = function(api, link)
+          local price = Number(pcall(api.GetAuctionPriceByItemLink, ADDON_NAME, link))
+          return price, price and Number(pcall(api.GetAuctionAgeByItemLink, ADDON_NAME, link))
+      end },
+    -- TSM_API: AuctionDB's market value, which TSM's desktop app keeps up to
+    -- date. It has no age per item, so Price age doesn't apply.
+    { key = "TSM", name = "TradeSkillMaster",
+      Find = function()
+          local api = TSM_API
+          return type(api) == "table" and type(api.ToItemString) == "function"
+              and type(api.GetCustomPriceValue) == "function" and api
+      end,
+      Ask = function(api, link)
+          local ok, itemString = pcall(api.ToItemString, link)
+          if not ok or type(itemString) ~= "string" then return end
+          return Number(pcall(api.GetCustomPriceValue, "DBMarket", itemString)), 0
+      end },
+    -- AuctionMaster.API: the lowest buyout in its latest scan, age in seconds.
+    { key = "AuctionMaster", name = "AuctionMaster",
+      Find = function()
+          local api = type(AuctionMaster) == "table" and AuctionMaster.API
+          return type(api) == "table" and type(api.GetLowestPrice) == "function"
+              and type(api.GetDataAge) == "function" and api
+      end,
+      Ask = function(api, link)
+          local price = Number(pcall(api.GetLowestPrice, link))
+          return price, price and Days(Number(pcall(api.GetDataAge, link)))
+      end },
+    -- BlackthornesTS_API (version 1): age in seconds, only for its own scans,
+    -- so prices it takes from elsewhere don't count.
+    { key = "Blackthornes", name = "Blackthornes Tradeskills",
+      Find = function()
+          local api = BlackthornesTS_API
+          return type(api) == "table" and type(api.GetPrice) == "function"
+              and type(api.GetPriceAge) == "function" and api
+      end,
+      Ask = function(api, link)
+          local price = Number(pcall(api.GetPrice, link))
+          return price, price and Days(Number(pcall(api.GetPriceAge, link)))
+      end },
+}
+
+local priceAddon
+local priceAPIs = {}    -- [key] = the API of each price addon found
+local priceAsk = {}     -- [key] = its Ask
+local cacheSource       -- the price source the cache is for
 local auctionCache = {} -- [link] = copper, false: no price
 local auctionAges = {}  -- [link] = days, false: not known
 
-local function AskAuctionator(call, link)
-    local ok, result = pcall(auctionator[call], ADDON_NAME, link)
-    if ok and type(result) == "number" then return result end
-end
-
-local function AskBlackthornes(call, link)
-    local ok, result = pcall(blackthornes[call], link)
-    if ok and type(result) == "number" then return result end
-end
-
 -- The auction price for one, less the cut; nil without a recent one.
 local function AuctionPrice(link)
+    local source = db.priceSource
+    if source ~= cacheSource then
+        wipe(auctionCache)
+        cacheSource = source
+    end
     local price = auctionCache[link]
     if price == nil then
-        if auctionator then
-            price = AskAuctionator("GetAuctionPriceByItemLink", link) or false
-            auctionAges[link] = price and AskAuctionator("GetAuctionAgeByItemLink", link) or false
-        else
-            price = AskBlackthornes("GetPrice", link) or false
-            local seconds = price and AskBlackthornes("GetPriceAge", link)
-            auctionAges[link] = seconds and floor(seconds / 86400) or false
-        end
+        local age
+        price, age = priceAsk[source](priceAPIs[source], link)
+        price = price or false
+        auctionAges[link] = price and age or false
         auctionCache[link] = price
     end
     local age = auctionAges[link]
@@ -358,6 +408,21 @@ ns.ExactSellPrice, ns.ItemWorth, ns.ScanBags = ExactSellPrice, ItemWorth, ScanBa
 ---------------------------------------------------------------------------
 
 local function OnAddonLoaded()
+    -- Price addons installed (the .toc's OptionalDeps loads them first); the
+    -- first one is the default price source.
+    ns.priceSources = {}
+    for _, source in ipairs(PRICE_SOURCES) do
+        local api = source.Find()
+        if api then
+            priceAPIs[source.key], priceAsk[source.key] = api, source.Ask
+            ns.priceSources[#ns.priceSources + 1] = source
+            if not priceAddon then
+                priceAddon = true
+                defaults.priceSource = source.key
+            end
+        end
+    end
+
     LootTriageDB = LootTriageDB or {}
     -- Sorting used to be an on/off checkbox (sortAfter): off stays off.
     if LootTriageDB.sortAfter == false and LootTriageDB.sortCorner == nil then
@@ -379,17 +444,9 @@ local function OnAddonLoaded()
     db = LootTriageDB
     ns.db = db
 
-    -- A price addon, if installed (the .toc's OptionalDeps loads it first):
-    -- Auctionator, else Blackthornes Tradeskills.
-    local api = type(Auctionator) == "table" and type(Auctionator.API) == "table" and Auctionator.API.v1
-    local bts = BlackthornesTS_API
-    if type(api) == "table" then
-        auctionator = api
-    elseif type(bts) == "table" and type(bts.GetPrice) == "function" and type(bts.GetPriceAge) == "function" then
-        blackthornes = bts
-    end
-    if auctionator or blackthornes then
-        priceAddon = true
+    -- A saved price source that isn't installed now goes back to the first one.
+    if not priceAPIs[db.priceSource] then db.priceSource = defaults.priceSource end
+    if priceAddon then
         ns.priceAddon = true
         events:RegisterEvent("AUCTION_HOUSE_CLOSED")
     end

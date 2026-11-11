@@ -7,6 +7,12 @@ local ipairs = ipairs
 -- Newest version first; one without a version uses the .toc's. An item is
 -- { name (in gold), what it does }, or a line.
 local WHATS_NEW = {
+    { version = "1.1.8",
+        { "New", {
+            { "TradeSkillMaster and AuctionMaster prices (nothing to set).", "Auction prices can use the prices TradeSkillMaster or AuctionMaster have. Turn on Auction prices on the Auction prices page." },
+            { "Price source (the first one installed).", "Picks which addon's prices to use when you have more than one: Auctionator, TradeSkillMaster, AuctionMaster or Blackthornes Tradeskills. On the Auction prices page." },
+        } },
+    },
     { version = "1.1.7",
         { "Changes", {
             "Items you keep (Alt+Left-click in your bags) now get a gold border around them instead of the small star, so you can see it on light icons like potions and scrolls.",

@@ -148,12 +148,21 @@ local function RegisterSettings()
     -- Without a price addon the rows are grayed out and their tooltips say why. Only
     -- the row reads its modify predicates (not the search), so they can't taint it.
     Page("Auction prices")
-    local needs = not ns.priceAddon and "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode("Needs Auctionator or Blackthornes Tradeskills. Install one to use this.") or ""
+    local needs = not ns.priceAddon and "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode("Needs Auctionator, TradeSkillMaster, AuctionMaster or Blackthornes Tradeskills. Install one to use this.") or ""
     local function NeedsPriceAddon(initializer)
         if not ns.priceAddon then initializer:AddModifyPredicate(function() return false end) end
     end
     NeedsPriceAddon(Checkbox("auctionPrices", "Auction prices",
         "Count an item as worth its auction price when that's more than a vendor pays. Gray items, soulbound items and prices older than Price age use the vendor price." .. needs))
+    -- Only the price addons installed; "None" without one.
+    local function PriceSourceOptions()
+        local container = Settings.CreateControlTextContainer()
+        for _, source in ipairs(ns.priceSources) do container:Add(source.key, source.name) end
+        if not ns.priceAddon then container:Add("", "None") end
+        return container:GetData()
+    end
+    NeedsPriceAddon(CreateDropdown(category, Setting("priceSource", "Price source"), PriceSourceOptions,
+        "Which addon's auction prices to use. TradeSkillMaster's are its market value from the TSM desktop app and have no age, so Price age doesn't apply to them." .. needs))
     NeedsPriceAddon(Slider("auctionMaxAge", "Price age", 1, 30,
         "Auction prices older than this many days use the vendor price instead." .. needs))
     NeedsPriceAddon(Slider("auctionCutPercent", "Auction house cut", 0, 15,
