@@ -35,6 +35,7 @@ local NEARLY_FULL_SLOTS = 4 -- free slots or fewer
 -- Junk after sorting (sortCorner).
 local SORT_OFF, SORT_BOTTOM_RIGHT, SORT_TOP_LEFT = 0, 1, 2
 
+
 -- Retail's interface numbers have six digits (120100), WoW Forever's five (16001).
 local IS_RETAIL = (select(4, GetBuildInfo()) or 0) >= 100000
 
@@ -51,18 +52,22 @@ local defaults = {
     keepQuestItems = false, -- items for quests in your log
     keepUnstartedQuestItems = false, -- items for quests not picked up yet
     keepRepeatableQuestItems = false,
-    questMark = false,      -- a quest "!" on bag items a quest keeps
+    leftoverQuestItems = false, -- quest items whose quests are all done can be suggested
+    questMark = false,     -- a quest "!" on bag items a quest keeps
     skipGrayQuests = false,
     questLevelsAbove = 60,  -- quests up to this many levels above yours (60: all)
     sortCorner = SORT_BOTTOM_RIGHT, -- where junk goes after a bag sort
     closeGaps = false,      -- the other items close up after a sort
     lootAdvice = true,      -- coins on loot when bags are full
+    trashButton = false,    -- the loot window's delete button
+    doubleClickLoot = false, -- double-clicking loot deletes the bag item numbered for it
     auctionPrices = false,  -- the auction price when it's above the vendor's
     priceSource = "",       -- the price addon used (PRICE_SOURCES' key; the first installed)
     auctionMaxAge = 14,     -- days
     auctionCutPercent = 0,
     keep = {},              -- [itemID] = true: kept, never suggested
     keepClick = 3,          -- the click that keeps a bag item (KEEP_CLICKS, 0 off)
+    settingsWindowFailed = false, -- the version whose settings window errored on opening
 }
 
 -- Clicks that keep a bag item.
@@ -177,20 +182,20 @@ end
 -- Which bag items may be suggested for deletion, what each is worth, and in
 -- what order.
 
--- A white or better item of a kind the settings keep.
+-- A white or better item of a kind the settings keep: the kind, for the tooltip.
 local function IsProtected(itemID, classID, subclassID, isCraftingReagent)
     if db.keepReagents and (isCraftingReagent or classID == CLASS_REAGENT or classID == CLASS_TRADEGOODS) then
-        return true
+        return "crafting material"
     end
-    if db.keepSpellReagents and classID == CLASS_MISC and subclassID == SUBCLASS_MISC_REAGENT then return true end
+    if db.keepSpellReagents and classID == CLASS_MISC and subclassID == SUBCLASS_MISC_REAGENT then return "spell reagent" end
     if db.keepTools and (TOOL_ITEMS[itemID] or classID == CLASS_PROFESSION
             or (classID == CLASS_WEAPON and subclassID == SUBCLASS_FISHING_POLE)) then
-        return true
+        return "profession tool"
     end
-    if db.keepConsumables and classID == CLASS_CONSUMABLE then return true end
-    if db.keepRecipes and classID == CLASS_RECIPE then return true end
-    if db.keepEquipment and (classID == CLASS_WEAPON or classID == CLASS_ARMOR) then return true end
-    return false
+    if db.keepConsumables and classID == CLASS_CONSUMABLE then return "consumable" end
+    if db.keepRecipes and classID == CLASS_RECIPE then return "recipe" end
+    if db.keepEquipment and (classID == CLASS_WEAPON or classID == CLASS_ARMOR) then return "weapon or armor" end
+    return nil
 end
 
 -- Item info not loaded yet: ask for it, and look again when it arrives.
@@ -312,33 +317,58 @@ local function ItemWorth(link, sellPrice, vendorOnly)
     return sellPrice, false
 end
 
--- A bag slot's item as a candidate { bag, slot, itemID, quality, value, count,
--- link, auction }, or nil when it's kept.
-local function EvaluateSlot(bag, slot)
-    local info = GetContainerItemInfo(bag, slot)
-    if not info then return end
+-- Why a bag item is kept: a reason for its tooltip, or true when its own
+-- tooltip line says why (kept by a click, a quest) or there's nothing to say.
+-- Nil when it can be suggested, then its vendor price, class and whether it's
+-- a leftover quest item.
+local function KeptReason(bag, slot, info)
     local itemID, quality = info.itemID, info.quality
-    if not itemID or not quality or quality > db.maxQuality or db.keep[itemID] then return end
+    if not itemID or not quality or quality > db.maxQuality or db.keep[itemID] then return true end
 
     local quest = GetContainerItemQuestInfo(bag, slot)
-    if quest and (quest.isQuestItem or quest.questID) then return end
+    local leftover = db.leftoverQuestItems and ns.IsLeftover(itemID, quest)
+    if not leftover and quest and (quest.isQuestItem or quest.questID) then return true end
 
     local name, _, _, _, _, _, _, _, _, _, sellPrice, classID, subclassID, _, _, _, isCraftingReagent =
         GetItemInfo(itemID)
     if sellPrice == nil then
         WaitForItemInfo(itemID)
-        return
+        return true
     end
-    if ns.NeededForQuest(itemID, name) then return end
+    if leftover then return nil, sellPrice, classID, true end
+    if ns.NeededForQuest(itemID, name) then return true end
     if quality > 0 then
         -- Whites and up without a vendor price are special (hearthstone, keys).
-        if info.hasNoValue or sellPrice == 0 then return end
-        if IsProtected(itemID, classID, subclassID, isCraftingReagent) then return end
+        if info.hasNoValue or sellPrice == 0 then return "can't be sold" end
+        local kind = IsProtected(itemID, classID, subclassID, isCraftingReagent)
+        if kind then return kind end
     end
-    -- Gear in an equipment set is kept. On Retail its price is its item level's.
     if classID == CLASS_WEAPON or classID == CLASS_ARMOR then
         local InEquipmentSet = C_Container.GetContainerItemEquipmentSetInfo
-        if InEquipmentSet and InEquipmentSet(bag, slot) then return end
+        if InEquipmentSet and InEquipmentSet(bag, slot) then return "in an equipment set" end
+    end
+    return nil, sellPrice, classID
+end
+
+-- For the tooltip: why a bag item is kept, or "leftover" for a leftover quest item.
+local function KeepReason(bag, slot)
+    local info = GetContainerItemInfo(bag, slot)
+    if not info then return end
+    local reason, _, _, leftover = KeptReason(bag, slot, info)
+    if type(reason) == "string" then return reason end
+    if reason == nil and leftover then return "leftover" end
+end
+
+-- A bag slot's item as a candidate { bag, slot, itemID, quality, value, count,
+-- link, auction }, or nil when it's kept.
+local function EvaluateSlot(bag, slot)
+    local info = GetContainerItemInfo(bag, slot)
+    if not info then return end
+    local kept, sellPrice, classID = KeptReason(bag, slot, info)
+    if kept then return end
+    local itemID, quality = info.itemID, info.quality
+    -- On Retail gear's price is its item level's.
+    if classID == CLASS_WEAPON or classID == CLASS_ARMOR then
         sellPrice = ExactSellPrice(info.hyperlink, sellPrice)
     end
 
@@ -401,7 +431,7 @@ ns.LAST_BAG, ns.REAGENT_BAG, ns.LAST_ANY_BAG = LAST_BAG, REAGENT_BAG, LAST_ANY_B
 ns.events, ns.loot, ns.lootPairs, ns.candidates, ns.visualIndex = events, loot, lootPairs, candidates, visualIndex
 ns.SlotKey, ns.Print, ns.ValueText, ns.ItemIDFromLink = SlotKey, Print, ValueText, ItemIDFromLink
 ns.NormalBags, ns.FreeSlots, ns.WaitForItemInfo = NormalBags, FreeSlots, WaitForItemInfo
-ns.ExactSellPrice, ns.ItemWorth, ns.ScanBags = ExactSellPrice, ItemWorth, ScanBags
+ns.ExactSellPrice, ns.ItemWorth, ns.ScanBags, ns.KeepReason = ExactSellPrice, ItemWorth, ScanBags, KeepReason
 
 ---------------------------------------------------------------------------
 -- Loading

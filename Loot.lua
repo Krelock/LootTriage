@@ -1,16 +1,19 @@
 -- LootTriage's loot coins: with full bags, each loot item is paired with a bag
 -- item to delete for it (the most valuable loot with your cheapest item, and
 -- so on), and loot worth more than its pair gets a gold coin. The bags
--- highlight every pair. Quest items always count as worth more.
+-- highlight every pair. Quest items always count as worth more. A delete
+-- button on the loot window can delete those bag items.
 --
--- Sections: Room and worth, Pairing, Coins, Refreshing.
+-- Sections: Room and worth, Pairing, Coins, Deleting, Refreshing.
 local _, ns = ...
 
 local GetContainerItemInfo = C_Container.GetContainerItemInfo
 local GetContainerNumSlots = C_Container.GetContainerNumSlots
 local GetContainerNumFreeSlots = C_Container.GetContainerNumFreeSlots
+local PickupContainerItem = C_Container.PickupContainerItem
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 local After = C_Timer.After
+local GetTime = GetTime
 local ipairs, pairs, wipe = ipairs, pairs, wipe
 local sort, huge = table.sort, math.huge
 local LOOT_SLOT_ITEM = (Enum.LootSlotType and Enum.LootSlotType.Item) or 1
@@ -297,9 +300,132 @@ local function HideLootMarks()
     for _, mark in pairs(lootMarks) do mark:Hide() end
 end
 
+---------------------------------------------------------------------------
+-- Deleting
+---------------------------------------------------------------------------
+-- With full bags, the delete button on the loot window's title bar, and taking
+-- loot when that's turned on, delete the bag item numbered for loot worth
+-- more. The game only lets addon code delete items on a click, out of combat.
+
+local deleteButton
+
+-- The bag item to delete next: the lowest number whose loot is worth more.
+local function NextToDelete()
+    if not loot.session or FreeSlots() > 0 then return end
+    local best
+    for _, pair in pairs(lootPairs) do
+        if pair.worth and pair.rank and PairValid(pair) and (not best or pair.rank < best.rank) then
+            best = pair
+        end
+    end
+    return best
+end
+
+-- Deletes a pair's bag item if it's still the stack that was paired; true if it did.
+local function DeletePairItem(pair)
+    if InCombatLockdown() or CursorHasItem() or not PairValid(pair) then return false end
+    local info = GetContainerItemInfo(pair.bag, pair.slot)
+    if info.isLocked or (info.stackCount or 1) ~= pair.count then return false end
+    PickupContainerItem(pair.bag, pair.slot)
+    local kind, itemID = GetCursorInfo()
+    if kind ~= "item" or itemID ~= pair.itemID then
+        ClearCursor()
+        return false
+    end
+    DeleteCursorItem()
+    return true
+end
+
+-- The button's tooltip is the bag item it deletes. The line under it comes
+-- from the item post-call in Tooltip.lua, so a rebuilt tooltip keeps it.
+local function ShowDeleteTooltip(button)
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    local pair = NextToDelete()
+    if pair then
+        GameTooltip:SetBagItem(pair.bag, pair.slot)
+    else
+        GameTooltip:SetText("Delete")
+        GameTooltip:AddLine(InCombatLockdown() and "Items can't be deleted in combat."
+            or "Nothing to delete: no loot here is worth more than what it would replace.", 1, 1, 1, true)
+    end
+    GameTooltip:Show()
+end
+
+-- What a click on the button does, for the bag item in its tooltip.
+local function DeleteButtonLine(owner)
+    if not deleteButton or owner ~= deleteButton then return end
+    local pair = NextToDelete()
+    if not pair then return end
+    if InCombatLockdown() then return "Items can't be deleted in combat.", 1, 0.2, 0.2 end
+    local number = ns.db.highlightMode ~= SHOW_OFF and (" (#%d in your bags)"):format(pair.rank) or ""
+    return ("Click to delete this%s to make room for %s."):format(number,
+        GetLootSlotLink(pair.lootSlot) or "better loot"), 0.2, 1, 0.2
+end
+
+local function OnDeleteClick(button)
+    local pair = NextToDelete()
+    if not pair then return end
+    DeletePairItem(pair)
+    ShowDeleteTooltip(button)
+end
+
+-- Blizzard's red delete button (character select's), a little smaller than
+-- the close button, in the title bar's empty left corner.
+local function CreateDeleteButton()
+    local button = CreateFrame("Button") -- no parent: see GetOverlay in Bags.lua
+    button:SetParent(LootFrame)
+    button:SetSize(20, 20)
+    button:SetPoint("TOPLEFT", LootFrame, "TOPLEFT", 6, -1)
+    if LootFrame.ClosePanelButton then button:SetFrameLevel(LootFrame.ClosePanelButton:GetFrameLevel()) end
+    button:SetNormalAtlas("128-RedButton-Delete")
+    button:SetPushedAtlas("128-RedButton-Delete-Highlight")
+    button:SetDisabledAtlas("128-RedButton-Delete-Disabled")
+    button:SetHighlightAtlas("RedButton-Highlight", "ADD")
+    button:SetScript("OnClick", OnDeleteClick)
+    button:SetScript("OnEnter", ShowDeleteTooltip)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    return button
+end
+
+local function UpdateDeleteButton()
+    if not (ns.db.trashButton and loot.open and loot.session and LootFrame:IsShown()) then
+        if deleteButton then deleteButton:Hide() end
+        return
+    end
+    deleteButton = deleteButton or CreateDeleteButton()
+    deleteButton:SetEnabled(NextToDelete() ~= nil)
+    deleteButton:Show()
+    if GameTooltip:IsOwned(deleteButton) then ShowDeleteTooltip(deleteButton) end
+end
+
+-- Double-clicking loot (its row in Blizzard's window) deletes its bag item
+-- first, so the loot goes in that slot. PreClick runs before Blizzard's OnClick
+-- takes the loot, which the window sets again for each row it fills. The first
+-- click is the game's own, which can't take loot into full bags.
+local DOUBLE_CLICK_SECONDS = 0.5
+local hookedLootItems = {}
+local lastClickSlot, lastClickTime = nil, 0
+
+local function OnLootItemPreClick(item)
+    if not ns.db.doubleClickLoot or IsModifiedClick() or FreeSlots() > 0 then return end
+    local lootSlot = LootSlotOf(item:GetParent())
+    local pair = loot.session and lootSlot and lootPairs[lootSlot]
+    if not (pair and pair.worth and pair.rank and PairValid(pair)) then return end
+    local now = GetTime()
+    local second = lastClickSlot == lootSlot and now - lastClickTime <= DOUBLE_CLICK_SECONDS
+    lastClickSlot, lastClickTime = lootSlot, now
+    if second then DeletePairItem(pair) end
+end
+
 -- The loot list set up a row, also one it reuses while scrolling.
 local function OnLootRowInitialized(_, button)
-    if ns.db then UpdateLootMark(button) end
+    if not ns.db then return end
+    UpdateLootMark(button)
+    local item = button.Item
+    if item and not hookedLootItems[item] then
+        hookedLootItems[item] = true
+        item:HookScript("PreClick", OnLootItemPreClick)
+    end
 end
 
 -- Plumber lays out its rows each time it fills them (the loot opening, a
@@ -365,7 +491,10 @@ end
 local function RefreshLoot()
     lootQueued = false
     HideLootMarks()
-    if not loot.open or (not ns.db.lootAdvice and ns.db.highlightMode == SHOW_OFF) then return end
+    if not loot.open or (not ns.db.lootAdvice and ns.db.highlightMode == SHOW_OFF) then
+        UpdateDeleteButton()
+        return
+    end
     if not LootFrame or (not LootFrame:IsShown() and BlizzardLootWindowInUse()) then
         if GetNumLootItems() > 0 then RetryLootSoon() end
         return
@@ -382,6 +511,7 @@ local function RefreshLoot()
     if lootIncomplete then RetryLootSoon() end
     ApplyHighlights()
     ForEachLootButton(UpdateLootMark)
+    UpdateDeleteButton()
 end
 
 -- The loot window fills in after loot events: on the next frame.
@@ -423,7 +553,9 @@ local function OnLootClosed()
         wipe(lootPairs)
         ApplyHighlights()
     end
+    UpdateDeleteButton()
 end
 
 ns.OnLootOpened, ns.OnLootSlotCleared, ns.OnLootClosed, ns.QueueRefreshLoot = OnLootOpened, OnLootSlotCleared, OnLootClosed, QueueRefreshLoot
 ns.HookLootRows, ns.OnOptionsChanged, ns.LootSlotOf = HookLootRows, OnOptionsChanged, LootSlotOf
+ns.DeleteButtonLine = DeleteButtonLine

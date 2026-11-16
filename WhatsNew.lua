@@ -7,6 +7,18 @@ local ipairs = ipairs
 -- Newest version first; one without a version uses the .toc's. An item is
 -- { name (in gold), what it does }, or a line.
 local WHATS_NEW = {
+    { version = "1.2.0",
+        { "New", {
+            { "Why it's kept (nothing to set).", "Hover an item in your bags that LootTriage never suggests and the tooltip says why, like profession tool, spell reagent, consumable or can't be sold." },
+            { "Leftover quest items (off by default).", "Quest items whose quests you've all done can be suggested for deletion, and their tooltip says so. On the Quests page." },
+            { "Delete button (off by default).", "A small delete button on the loot window's title bar when your bags are full: one click deletes the bag item numbered for loot worth more, so that loot fits. On the LootTriage page." },
+            { "Taking loot deletes its bag item (off by default).", "When your bags are full, double-clicking loot worth more than its numbered bag item deletes that item first, so the loot goes in its place. On the LootTriage page." },
+        } },
+        { "Changes", {
+            "LootTriage's settings are in a window of its own, with the LootTriage logo on a stone background: the button in Options > AddOns > LootTriage opens it, and so does /lt. With the gamepad UI on, they stay in the options.",
+            "The LootTriage and Quests settings pages have section headers.",
+        } },
+    },
     { version = "1.1.8",
         { "New", {
             { "TradeSkillMaster and AuctionMaster prices (nothing to set).", "Auction prices can use the prices TradeSkillMaster or AuctionMaster have. Turn on Auction prices on the Auction prices page." },

@@ -2,7 +2,7 @@
 -- deletion. They come from your quest log's objectives and, on WoW Forever,
 -- from QuestItems.lua's list of what the original game's quests ask for.
 --
--- Sections: Quest log, Quest list, Events.
+-- Sections: Quest log, Quest list, Leftovers, Events.
 local _, ns = ...
 
 local ipairs, pairs, wipe = ipairs, pairs, wipe
@@ -137,6 +137,33 @@ local function NeededForQuest(itemID, name, found)
 end
 
 ---------------------------------------------------------------------------
+-- Leftovers
+---------------------------------------------------------------------------
+-- A quest item is a leftover when it starts a quest you've done, or when every
+-- quest you can do that asks for it is done (the list's, on WoW Forever).
+
+local leftoverItems = not IS_RETAIL and ns.leftoverItems or {}
+
+local function QuestsDone(quests)
+    if type(quests) == "number" then return CanDo(quests) and IsQuestDone(quests) end
+    local any = false
+    for _, questID in ipairs(quests) do
+        if CanDo(questID) then
+            if not IsQuestDone(questID) then return false end
+            any = true
+        end
+    end
+    return any
+end
+
+local function IsLeftover(itemID, quest)
+    if not IsQuestDone then return false end
+    if quest and quest.questID then return IsQuestDone(quest.questID) end
+    local quests = leftoverItems[itemID]
+    return quests ~= nil and QuestsDone(quests)
+end
+
+---------------------------------------------------------------------------
 -- Events
 ---------------------------------------------------------------------------
 
@@ -169,4 +196,4 @@ local function OnLevelUp(level)
     if ns.db.keepUnstartedQuestItems then ns.OnOptionsChanged() end
 end
 
-ns.NeededForQuest, ns.OnQuestLogUpdate, ns.OnLevelUp = NeededForQuest, OnQuestLogUpdate, OnLevelUp
+ns.NeededForQuest, ns.OnQuestLogUpdate, ns.OnLevelUp, ns.IsLeftover = NeededForQuest, OnQuestLogUpdate, OnLevelUp, IsLeftover

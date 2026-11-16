@@ -255,15 +255,17 @@ local function IsKeepClick(mouseButton)
     return (click.ctrl or false) == IsControlKeyDown() and (click.alt or false) == IsAltKeyDown()
 end
 
+-- The bag and slot a bag button shows (nil for a bag addon's button that
+-- doesn't show one of your slots).
+local function ButtonSlot(button)
+    if addonButtons[button] then return AddonButtonSlot(button) end
+    return button.GetBagID and button:GetBagID() or button:GetParent():GetID(), button:GetID()
+end
+
 local function OnBagItemClick(button, mouseButton)
     if not ns.db or not IsKeepClick(mouseButton) then return end
-    local bag, slot
-    if addonButtons[button] then
-        bag, slot = AddonButtonSlot(button)
-        if not bag then return end
-    else
-        bag, slot = button.GetBagID and button:GetBagID() or button:GetParent():GetID(), button:GetID()
-    end
+    local bag, slot = ButtonSlot(button)
+    if not bag then return end
     local info = GetContainerItemInfo(bag, slot)
     if info and info.itemID then ToggleKeep(info.itemID) end
 end
@@ -462,5 +464,5 @@ end
 ns.overlays, ns.hookedBagButtons, ns.rankBySlot, ns.entryBySlot = overlays, hookedBagButtons, rankBySlot, entryBySlot
 ns.GOLD_R, ns.GOLD_G, ns.GOLD_B, ns.PREVIEW_SECONDS = GOLD_R, GOLD_G, GOLD_B, PREVIEW_SECONDS
 ns.CollectContainerFrames, ns.HookContainerFrames, ns.ForEachBagButton = CollectContainerFrames, HookContainerFrames, ForEachBagButton
-ns.BagsOpen, ns.OtherBagsInUse, ns.PairValid, ns.SetKeep = BagsOpen, OtherBagsInUse, PairValid, SetKeep
+ns.BagsOpen, ns.OtherBagsInUse, ns.PairValid, ns.SetKeep, ns.ButtonSlot = BagsOpen, OtherBagsInUse, PairValid, SetKeep, ButtonSlot
 ns.StartPreview, ns.ApplyHighlights, ns.Rebuild, ns.QueueRebuild = StartPreview, ApplyHighlights, Rebuild, QueueRebuild

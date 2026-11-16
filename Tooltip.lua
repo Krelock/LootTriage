@@ -1,6 +1,7 @@
 -- LootTriage's lines in item tooltips, added after Blizzard builds them:
 -- kept items, items a quest needs, delete candidates with their number and
--- value, and in the loot window what to delete to make room.
+-- value, why other bag items are kept, and in the loot window what to delete
+-- to make room.
 local _, ns = ...
 
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
@@ -10,7 +11,8 @@ local KEEP_CLICKS, SHOW_OFF, loot, lootPairs = ns.KEEP_CLICKS, ns.SHOW_OFF, ns.l
 local SlotKey, ValueText, NeededForQuest = ns.SlotKey, ns.ValueText, ns.NeededForQuest
 local overlays, hookedBagButtons, rankBySlot, entryBySlot = ns.overlays, ns.hookedBagButtons, ns.rankBySlot, ns.entryBySlot
 local OtherBagsInUse, PairValid, GOLD_R, GOLD_G, GOLD_B = ns.OtherBagsInUse, ns.PairValid, ns.GOLD_R, ns.GOLD_G, ns.GOLD_B
-local LootSlotOf = ns.LootSlotOf
+local LootSlotOf, ButtonSlot, KeepReason = ns.LootSlotOf, ns.ButtonSlot, ns.KeepReason
+local DeleteButtonLine = ns.DeleteButtonLine
 
 local function IsInside(frame, ancestor)
     while frame do
@@ -71,6 +73,12 @@ local function AddTooltipLine(tooltip, data)
     end
     if not owner then return end
 
+    local deleteLine, r, g, b = DeleteButtonLine(owner)
+    if deleteLine then
+        tooltip:AddLine(deleteLine, r, g, b, true)
+        return
+    end
+
     local o = overlays[owner]
     if o and o.entry and o:IsShown() then
         tooltip:AddLine(("LootTriage: delete candidate #%d (%s)"):format(o.rank, ValueText(o.entry)),
@@ -78,6 +86,18 @@ local function AddTooltipLine(tooltip, data)
         local hint = KeepHint(inBags)
         if hint then
             tooltip:AddLine(hint .. " to never suggest this item for deletion", 0.6, 0.6, 0.6)
+        end
+        return
+    end
+
+    -- Why a bag item is never suggested, or that it's a leftover quest item.
+    if inBags then
+        local bag, slot = ButtonSlot(owner)
+        local why = bag and KeepReason(bag, slot)
+        if why == "leftover" then
+            tooltip:AddLine("LootTriage: leftover quest item, its quests are done", GOLD_R, GOLD_G, GOLD_B)
+        elseif why then
+            tooltip:AddLine(("LootTriage: %s, never suggested for deletion"):format(why), 0.6, 0.8, 1)
         end
         return
     end
@@ -96,10 +116,12 @@ local function AddTooltipLine(tooltip, data)
     local lootSlot = LootSlotOf(owner) or (owner:GetParent() and LootSlotOf(owner:GetParent()))
     local pair = lootSlot and lootPairs[lootSlot]
     if not pair or not pair.worth or not PairValid(pair) then return end
-    local line = ns.db.highlightMode ~= SHOW_OFF
-        and ("LootTriage: delete %s (#%d in your bags) to make room for this."):format(pair.link or "?", pair.rank)
-        or ("LootTriage: delete %s to make room for this."):format(pair.link or "?")
-    tooltip:AddLine(line, 0.2, 1, 0.2, true)
+    local number = ns.db.highlightMode ~= SHOW_OFF and (" (#%d in your bags)"):format(pair.rank) or ""
+    -- What a double-click does here (Blizzard's window only, not in combat).
+    local line = ns.db.doubleClickLoot and IsInside(owner, LootFrame) and not InCombatLockdown()
+        and "LootTriage: double-clicking this deletes %s%s first."
+        or "LootTriage: delete %s%s to make room for this."
+    tooltip:AddLine(line:format(pair.link or "?", number), 0.2, 1, 0.2, true)
 end
 
 if TooltipDataProcessor and Enum.TooltipDataType then
