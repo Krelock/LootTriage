@@ -358,7 +358,7 @@ local function DeleteButtonLine(owner)
     if not pair then return end
     if InCombatLockdown() then return "Items can't be deleted in combat.", 1, 0.2, 0.2 end
     local number = ns.db.highlightMode ~= SHOW_OFF and (" (#%d in your bags)"):format(pair.rank) or ""
-    return ("Click to delete this%s to make room for %s."):format(number,
+    return ("Click to delete this%s and make room for %s."):format(number,
         GetLootSlotLink(pair.lootSlot) or "better loot"), 0.2, 1, 0.2
 end
 

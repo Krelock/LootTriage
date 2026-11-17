@@ -57,7 +57,7 @@ local function PriceSourceChoices()
     return list
 end
 
-local GONE_FOR_GOOD = "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode("Deleted items are gone for good. They can't be bought back from a vendor.")
+local GONE_FOR_GOOD = "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode("Deleting can't be undone: the item can't be bought back from a vendor.")
 local NEEDS_PRICE_ADDON = "Needs Auctionator, TradeSkillMaster, AuctionMaster or Blackthornes Tradeskills. Install one to use this."
 
 local SETTINGS = {
@@ -77,11 +77,11 @@ local SETTINGS = {
     { kind = "checkbox", key = "lootAdvice", name = "Loot coins when bags are full",
         tip = "When your bags are full, put a gold coin on loot that's worth more than the bag item it would replace." },
     { kind = "checkbox", key = "trashButton", name = "Delete button",
-        tip = "Adds a small red trash button to the loot window while your bags are full. One click on it deletes one item from your bags for good: the lowest numbered one whose loot is worth more. Hover the button first to see which item."
+        tip = "While your bags are full, the loot window gets a small red delete button. Each click deletes the cheapest item in your bags that better loot can replace. Hover it to see which item."
             .. "\n\nNever in combat."
             .. GONE_FOR_GOOD },
-    { kind = "checkbox", key = "doubleClickLoot", name = "Taking loot deletes its bag item",
-        tip = "While your bags are full, double-clicking loot that's worth more than its numbered bag item (the loot with a gold coin) deletes that bag item for good, so the loot goes in its place. A single click works as always. Hover the loot first: its tooltip names the bag item."
+    { kind = "checkbox", key = "doubleClickLoot", name = "Double-click loot to make room",
+        tip = "While your bags are full, double-click loot with a gold coin to delete the cheapest item in your bags and loot it. Hover the loot to see which item."
             .. "\n\nOnly in Blizzard's loot window. Never in combat."
             .. GONE_FOR_GOOD },
     { header = "Bags" },

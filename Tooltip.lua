@@ -119,7 +119,7 @@ local function AddTooltipLine(tooltip, data)
     local number = ns.db.highlightMode ~= SHOW_OFF and (" (#%d in your bags)"):format(pair.rank) or ""
     -- What a double-click does here (Blizzard's window only, not in combat).
     local line = ns.db.doubleClickLoot and IsInside(owner, LootFrame) and not InCombatLockdown()
-        and "LootTriage: double-clicking this deletes %s%s first."
+        and "LootTriage: double-click to delete %s%s and loot this."
         or "LootTriage: delete %s%s to make room for this."
     tooltip:AddLine(line:format(pair.link or "?", number), 0.2, 1, 0.2, true)
 end
