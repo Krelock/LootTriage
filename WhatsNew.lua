@@ -137,7 +137,7 @@ end
 local function ShowWhatsNew()
     if not dialog.frame then
         local frame = NewFrame("Frame", UIParent)
-        frame:SetFrameStrata("DIALOG")
+        frame:SetFrameStrata("FULLSCREEN_DIALOG") -- (over the settings window, whose button opens it)
         frame:SetToplevel(true)
         frame:EnableMouse(true)
         frame:SetPoint("TOP", UIParent, "TOP", 0, -135)
