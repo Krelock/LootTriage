@@ -95,16 +95,22 @@ local function Slider(page, row)
     return slider
 end
 
--- Radio choices, saved as the choice's value.
+-- Radio choices, saved as the choice's value. Its two functions are made once:
+-- the menu hands them the choice's value (each menu built is garbage later).
 local function Dropdown(page, row)
     local dropdown = New("DropdownButton", page, "WowStyle1DropdownTemplate")
     dropdown:SetWidth(168)
+    local function IsPicked(value) return ns.db[row.key] == value end
+    local function Pick(value) Set(row.key, value) end
+    -- Blizzard's template builds the whole menu each time the dropdown shows, and
+    -- SetupMenu builds it at once if shown, only to show the chosen option's name:
+    -- here it's built when the menu opens, and RefreshPage writes the name.
+    dropdown:SetScript("OnShow", nil)
+    dropdown:Hide()
     dropdown:SetupMenu(function(_, root)
-        for _, choice in ipairs(row.choices()) do
-            local value = choice[1]
-            root:CreateRadio(choice[2], function() return ns.db[row.key] == value end, function() Set(row.key, value) end)
-        end
+        for _, choice in ipairs(row.choices()) do root:CreateRadio(choice[2], IsPicked, Pick, choice[1]) end
     end)
+    dropdown:Show()
     Row(dropdown, row)
     Tooltip(dropdown, row)
     return dropdown
@@ -162,10 +168,12 @@ local function NewPage(parent, title)
     page.title = Label(page, title, "GameFontHighlightLarge")
     page.title:SetPoint("TOPLEFT", LEFT, -14)
     page.columns = { { page = page, x = LEFT, top = -50 }, { page = page, x = RIGHT, top = -50 } }
-    page.column, page.parts = page.columns[1], {}
+    page.column, page.rows, page.parts = page.columns[1], {}, {}
     return page
 end
 
+-- The pages and which settings go on each; their controls are made when the
+-- page is first shown (frames are never freed, so a page never opened costs nothing).
 local function BuildPages(parent)
     local pages = { NewPage(parent, ADDON_NAME) }
     local page = pages[1]
@@ -173,7 +181,18 @@ local function BuildPages(parent)
         if row.page then
             page = NewPage(parent, row.page)
             pages[#pages + 1] = page
-        elseif row.column then
+        else
+            page.rows[#page.rows + 1] = row
+        end
+    end
+    return pages
+end
+
+local function BuildRows(page)
+    if page.built then return end
+    page.built = true
+    for _, row in ipairs(page.rows) do
+        if row.column then
             page.column = page.columns[row.column]
         elseif row.header then
             page.column[#page.column + 1] = Header(page, row.header)
@@ -192,13 +211,19 @@ local function BuildPages(parent)
             end
         end
     end
-    for _, each in ipairs(pages) do
-        for _, column in ipairs(each.columns) do Stack(column) end
+    for _, column in ipairs(page.columns) do Stack(column) end
+end
+
+-- A dropdown's label: the saved choice's name (nothing for a value it doesn't list).
+local function ChoiceName(row)
+    local value = ns.db[row.key]
+    for _, choice in ipairs(row.choices()) do
+        if choice[1] == value then return choice[2] end
     end
-    return pages
 end
 
 local function RefreshPage(page)
+    BuildRows(page)
     refreshing = true
     for _, part in ipairs(page.parts) do
         local kind, key = part.row.kind, part.row.key
@@ -207,7 +232,7 @@ local function RefreshPage(page)
         elseif kind == "slider" then
             part:SetValue(ns.db[key])
         elseif kind == "dropdown" then
-            part:GenerateMenu()
+            part:SetText(ChoiceName(part.row))
         end
     end
     refreshing = false
@@ -256,7 +281,7 @@ end
 local function Build()
     window = New("Frame", UIParent, "ButtonFrameTemplate")
     window:Hide()
-    window:SetSize(760 + LIST, 400)
+    window:SetSize(760 + LIST, 460)
     window:SetPoint("CENTER", 0, 20)
     window:SetFrameStrata("DIALOG")
     window:SetToplevel(true)

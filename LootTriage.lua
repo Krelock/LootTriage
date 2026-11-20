@@ -5,7 +5,7 @@
 --   QuestItems.lua  items the original game's quests ask for (generated)
 --   LootTriage.lua  settings, the bag scan, loading and events
 --   Quests.lua      items quests need
---   Bags.lua        highlights, kept items and quest marks in the bags
+--   Bags.lua        highlights, kept items and marks in the bags, Baganator's junk
 --   Sorting.lua     junk to a corner after Blizzard's sort
 --   Loot.lua        coins on loot when bags are full
 --   Tooltip.lua     LootTriage's tooltip lines
@@ -35,6 +35,9 @@ local NEARLY_FULL_SLOTS = 4 -- free slots or fewer
 -- Junk after sorting (sortCorner).
 local SORT_OFF, SORT_BOTTOM_RIGHT, SORT_TOP_LEFT = 0, 1, 2
 
+-- Mark items (markItems): none, items a quest keeps, every kept item.
+local MARK_OFF, MARK_QUESTS, MARK_ALL = 0, 1, 2
+
 
 -- Retail's interface numbers have six digits (120100), WoW Forever's five (16001).
 local IS_RETAIL = (select(4, GetBuildInfo()) or 0) >= 100000
@@ -43,22 +46,31 @@ local defaults = {
     highlightMode = SHOW_LOOTING, -- when bag items are highlighted
     count = 5,              -- items highlighted outside looting
     maxQuality = IS_RETAIL and 2 or 1, -- 0 grays only, 1 and whites, 2 and greens
-    keepConsumables = true, -- never highlighted: potions, food, scrolls...
+    keepPotions = true,     -- never highlighted: potions, elixirs, flasks
+    keepFood = true,        -- food and drink
+    keepBandages = true,
+    keepScrolls = true,
+    keepConsumables = true, -- other consumables
     keepReagents = true,    -- crafting materials
+    reagentsMyProfessions = false, -- only the materials your professions use
     keepSpellReagents = true, -- Rune of Teleportation, Light Feather...
     keepTools = true,       -- profession tools, fishing poles
     keepRecipes = true,
-    keepEquipment = false,  -- weapons and armor
-    keepQuestItems = false, -- items for quests in your log
+    keepUsableGear = false, -- weapons and armor your class can use
+    keepBoEGear = false,    -- bind-on-equip gear not bound yet
+    keepBags = true,        -- bags and quivers
+    keepAmmo = true,        -- arrows and bullets
+    keepQuestItems = true,  -- items for quests in your log
     keepUnstartedQuestItems = false, -- items for quests not picked up yet
     keepRepeatableQuestItems = false,
     leftoverQuestItems = false, -- quest items whose quests are all done can be suggested
-    questMark = false,     -- a quest "!" on bag items a quest keeps
+    markItems = 0,          -- marks on kept bag items (MARK_*)
     skipGrayQuests = false,
     questLevelsAbove = 60,  -- quests up to this many levels above yours (60: all)
     sortCorner = SORT_BOTTOM_RIGHT, -- where junk goes after a bag sort
     closeGaps = false,      -- the other items close up after a sort
     lootAdvice = true,      -- coins on loot when bags are full
+    tooltipLines = true,    -- LootTriage's lines in item tooltips
     trashButton = false,    -- the loot window's delete button
     doubleClickLoot = false, -- double-clicking loot deletes the bag item numbered for it
     auctionPrices = false,  -- the auction price when it's above the vendor's
@@ -97,15 +109,65 @@ local TOOL_ITEMS = {
 
 -- Item classes (Enum.ItemClass) and subclasses.
 local CLASS_CONSUMABLE = 0
+local CLASS_CONTAINER = 1
 local CLASS_WEAPON = 2
 local CLASS_ARMOR = 4
 local CLASS_REAGENT = 5
+local CLASS_PROJECTILE = 6
 local CLASS_TRADEGOODS = 7
 local CLASS_RECIPE = 9
+local CLASS_QUIVER = 11
 local CLASS_MISC = 15
 local CLASS_PROFESSION = 19
 local SUBCLASS_FISHING_POLE = 20
 local SUBCLASS_MISC_REAGENT = 1 -- spell reagents
+local BIND_ON_EQUIP = 2
+
+-- Consumables' subclasses: the kind each is kept as, and its setting.
+local CONSUMABLE_KINDS = {
+    [1] = { "potion or elixir", "keepPotions" }, -- potions
+    [2] = { "potion or elixir", "keepPotions" }, -- elixirs
+    [3] = { "potion or elixir", "keepPotions" }, -- flasks
+    [4] = { "scroll", "keepScrolls" },
+    [5] = { "food or drink", "keepFood" },
+    [7] = { "bandage", "keepBandages" },
+}
+
+-- Profession skill lines, and the trade goods subclasses each one uses.
+local ALCHEMY, BLACKSMITHING, ENCHANTING, ENGINEERING = 171, 164, 333, 202
+local LEATHERWORKING, TAILORING, MINING, COOKING, FIRST_AID = 165, 197, 186, 185, 129
+local CRAFTING_SKILLS = { ALCHEMY, BLACKSMITHING, ENCHANTING, ENGINEERING, LEATHERWORKING, TAILORING, MINING, COOKING, FIRST_AID }
+local MATERIAL_SKILLS = {
+    [1] = { ENGINEERING },                          -- parts
+    [2] = { ENGINEERING },                          -- explosives
+    [3] = { ENGINEERING },                          -- devices
+    [5] = { TAILORING, FIRST_AID },                 -- cloth
+    [6] = { LEATHERWORKING },                       -- leather
+    [7] = { BLACKSMITHING, ENGINEERING, MINING },   -- metal and stone
+    [8] = { COOKING },                              -- meat
+    [9] = { ALCHEMY },                              -- herbs
+    [12] = { ENCHANTING },                          -- enchanting
+}
+
+-- What each class can wear and wield: armor and weapon subclasses. Rings,
+-- necks, trinkets and the like (armor subclass 0) and miscellaneous weapons
+-- (14) fit everyone. Other games' classes count as able to use anything.
+local function Set(...)
+    local t = {}
+    for i = 1, select("#", ...) do t[select(i, ...)] = true end
+    return t
+end
+local GEAR = {
+    WARRIOR = { armor = Set(1, 2, 3, 4, 6), weapon = Set(0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 15, 16, 18) },
+    PALADIN = { armor = Set(1, 2, 3, 4, 6, 7), weapon = Set(0, 1, 4, 5, 6, 7, 8) },
+    HUNTER = { armor = Set(1, 2, 3), weapon = Set(0, 1, 2, 3, 6, 7, 8, 10, 13, 15, 16, 18) },
+    ROGUE = { armor = Set(1, 2), weapon = Set(2, 3, 4, 7, 13, 15, 16, 18) },
+    PRIEST = { armor = Set(1), weapon = Set(4, 10, 15, 19) },
+    SHAMAN = { armor = Set(1, 2, 3, 6, 9), weapon = Set(0, 1, 4, 5, 10, 13, 15) },
+    MAGE = { armor = Set(1), weapon = Set(7, 10, 15, 19) },
+    WARLOCK = { armor = Set(1), weapon = Set(7, 10, 15, 19) },
+    DRUID = { armor = Set(1, 2, 8), weapon = Set(4, 5, 10, 13, 15) },
+}
 
 local LAST_BAG = NUM_BAG_SLOTS or 4
 local REAGENT_BAG = Enum.BagIndex and Enum.BagIndex.ReagentBag
@@ -183,8 +245,57 @@ end
 -- what order.
 
 -- A white or better item of a kind the settings keep: the kind, for the tooltip.
-local function IsProtected(itemID, classID, subclassID, isCraftingReagent)
-    if db.keepReagents and (isCraftingReagent or classID == CLASS_REAGENT or classID == CLASS_TRADEGOODS) then
+-- Your professions (skill line -> true), read again when your skills change.
+local professions
+local function ReadProfessions()
+    local known = {}
+    local Info = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID
+    if Info then
+        for _, skill in ipairs(CRAFTING_SKILLS) do
+            if Info(skill) then known[skill] = true end -- nil for one you don't have
+        end
+    end
+    return known
+end
+
+-- Whether a crafting material is one your professions use (by its kind: cloth
+-- for tailoring and first aid, herbs for alchemy...). Materials of no one
+-- profession count for any. Retail's professions are other ones: all count.
+local function UsedByYourProfessions(classID, subclassID)
+    if IS_RETAIL then return true end
+    professions = professions or ReadProfessions()
+    local skills = classID == CLASS_TRADEGOODS and MATERIAL_SKILLS[subclassID] or CRAFTING_SKILLS
+    for _, skill in ipairs(skills) do
+        if professions[skill] then return true end
+    end
+    return false
+end
+
+-- SKILL_LINES_CHANGED (skill-ups too): the highlights again if your professions changed.
+local function OnSkillsChanged()
+    if not professions then return end
+    local known = ReadProfessions()
+    for _, skill in ipairs(CRAFTING_SKILLS) do
+        if (known[skill] or false) ~= (professions[skill] or false) then
+            professions = known
+            if db.keepReagents and db.reagentsMyProfessions then ns.OnOptionsChanged() end
+            return
+        end
+    end
+end
+
+-- Gear your class can wear or wield, whatever its level. Retail: all of it.
+local function CanUseGear(classID, subclassID)
+    if IS_RETAIL then return true end
+    local gear = GEAR[select(2, UnitClass("player"))]
+    if not gear then return true end
+    if classID == CLASS_ARMOR then return subclassID == 0 or gear.armor[subclassID] == true end
+    return subclassID == 14 or gear.weapon[subclassID] == true
+end
+
+local function IsProtected(itemID, classID, subclassID, isCraftingReagent, bindType, isBound)
+    if db.keepReagents and (isCraftingReagent or classID == CLASS_REAGENT or classID == CLASS_TRADEGOODS)
+            and (not db.reagentsMyProfessions or UsedByYourProfessions(classID, subclassID)) then
         return "crafting material"
     end
     if db.keepSpellReagents and classID == CLASS_MISC and subclassID == SUBCLASS_MISC_REAGENT then return "spell reagent" end
@@ -192,9 +303,21 @@ local function IsProtected(itemID, classID, subclassID, isCraftingReagent)
             or (classID == CLASS_WEAPON and subclassID == SUBCLASS_FISHING_POLE)) then
         return "profession tool"
     end
-    if db.keepConsumables and classID == CLASS_CONSUMABLE then return "consumable" end
+    if classID == CLASS_CONSUMABLE then
+        local kind = CONSUMABLE_KINDS[subclassID]
+        if kind then
+            if db[kind[2]] then return kind[1] end
+        elseif db.keepConsumables then
+            return "consumable"
+        end
+    end
     if db.keepRecipes and classID == CLASS_RECIPE then return "recipe" end
-    if db.keepEquipment and (classID == CLASS_WEAPON or classID == CLASS_ARMOR) then return "weapon or armor" end
+    if classID == CLASS_WEAPON or classID == CLASS_ARMOR then
+        if db.keepBoEGear and bindType == BIND_ON_EQUIP and not isBound then return "bind-on-equip gear" end
+        if db.keepUsableGear and CanUseGear(classID, subclassID) then return "gear you can use" end
+    end
+    if db.keepBags and (classID == CLASS_CONTAINER or classID == CLASS_QUIVER) then return "bag or quiver" end
+    if db.keepAmmo and classID == CLASS_PROJECTILE then return "ammo" end
     return nil
 end
 
@@ -329,7 +452,7 @@ local function KeptReason(bag, slot, info)
     local leftover = db.leftoverQuestItems and ns.IsLeftover(itemID, quest)
     if not leftover and quest and (quest.isQuestItem or quest.questID) then return true end
 
-    local name, _, _, _, _, _, _, _, _, _, sellPrice, classID, subclassID, _, _, _, isCraftingReagent =
+    local name, _, _, _, _, _, _, _, _, _, sellPrice, classID, subclassID, bindType, _, _, isCraftingReagent =
         GetItemInfo(itemID)
     if sellPrice == nil then
         WaitForItemInfo(itemID)
@@ -340,7 +463,7 @@ local function KeptReason(bag, slot, info)
     if quality > 0 then
         -- Whites and up without a vendor price are special (hearthstone, keys).
         if info.hasNoValue or sellPrice == 0 then return "can't be sold" end
-        local kind = IsProtected(itemID, classID, subclassID, isCraftingReagent)
+        local kind = IsProtected(itemID, classID, subclassID, isCraftingReagent, bindType, info.isBound)
         if kind then return kind end
     end
     if classID == CLASS_WEAPON or classID == CLASS_ARMOR then
@@ -426,6 +549,7 @@ end
 -- For the other files.
 ns.IS_RETAIL, ns.defaults, ns.KEEP_CLICKS, ns.KEEP_CLICK_OFF = IS_RETAIL, defaults, KEEP_CLICKS, KEEP_CLICK_OFF
 ns.SHOW_OFF, ns.SHOW_LOOTING, ns.SHOW_NEARLY_FULL, ns.SHOW_ALWAYS = SHOW_OFF, SHOW_LOOTING, SHOW_NEARLY_FULL, SHOW_ALWAYS
+ns.MARK_OFF, ns.MARK_QUESTS, ns.MARK_ALL, ns.IsProtected = MARK_OFF, MARK_QUESTS, MARK_ALL, IsProtected
 ns.NEARLY_FULL_SLOTS, ns.SORT_OFF, ns.SORT_BOTTOM_RIGHT, ns.SORT_TOP_LEFT = NEARLY_FULL_SLOTS, SORT_OFF, SORT_BOTTOM_RIGHT, SORT_TOP_LEFT
 ns.LAST_BAG, ns.REAGENT_BAG, ns.LAST_ANY_BAG = LAST_BAG, REAGENT_BAG, LAST_ANY_BAG
 ns.events, ns.loot, ns.lootPairs, ns.candidates, ns.visualIndex = events, loot, lootPairs, candidates, visualIndex
@@ -462,6 +586,21 @@ local function OnAddonLoaded()
     if LootTriageDB.keepUnstartedQuestItems == nil and LootTriageDB.keepQuestItems ~= nil then
         LootTriageDB.keepUnstartedQuestItems = LootTriageDB.keepQuestItems
     end
+    -- Consumables and Weapons and armor used to be one checkbox each: their
+    -- parts start as it was.
+    for _, key in ipairs({ "keepPotions", "keepFood", "keepBandages", "keepScrolls" }) do
+        if LootTriageDB[key] == nil and LootTriageDB.keepConsumables ~= nil then
+            LootTriageDB[key] = LootTriageDB.keepConsumables
+        end
+    end
+    if LootTriageDB.keepEquipment ~= nil and LootTriageDB.keepUsableGear == nil then
+        LootTriageDB.keepUsableGear = LootTriageDB.keepEquipment
+        LootTriageDB.keepBoEGear = LootTriageDB.keepEquipment
+    end
+    -- Mark quest items used to be an on/off checkbox (questMark).
+    if LootTriageDB.questMark and LootTriageDB.markItems == nil then
+        LootTriageDB.markItems = MARK_QUESTS
+    end
     -- Settings that are gone are dropped, new ones filled in.
     for k in pairs(LootTriageDB) do
         if defaults[k] == nil then LootTriageDB[k] = nil end
@@ -483,6 +622,7 @@ local function OnAddonLoaded()
 
     ns.CollectContainerFrames()
     ns.HookContainerFrames()
+    ns.HookBaganator()
     ns.HookLootRows()
     if Settings and Settings.RegisterVerticalLayoutCategory then
         local ok, err = pcall(ns.RegisterSettings)
@@ -499,6 +639,7 @@ local function OnAddonLoaded()
     events:RegisterEvent("LOOT_CLOSED")
     events:RegisterEvent("QUEST_LOG_UPDATE")
     events:RegisterEvent("PLAYER_LEVEL_UP")
+    events:RegisterEvent("SKILL_LINES_CHANGED")
 end
 
 events:RegisterEvent("ADDON_LOADED")
@@ -523,6 +664,8 @@ events:SetScript("OnEvent", function(_, event, arg1)
         -- The price addon may have new prices.
         wipe(auctionCache)
         if db.auctionPrices and ns.BagsOpen() then ns.QueueRebuild() end
+    elseif event == "SKILL_LINES_CHANGED" then
+        OnSkillsChanged()
     elseif event == "PLAYER_LEVEL_UP" then
         ns.OnLevelUp(arg1)
     elseif event == "GET_ITEM_INFO_RECEIVED" then

@@ -245,8 +245,21 @@ local function PlumberRows()
     return type(rows) == "table" and rows or nil
 end
 
+-- XLoot's loot window, which replaces Blizzard's too: the rows it shows now.
+local function XLootRows()
+    local window = XLootFrame
+    local rows = type(window) == "table" and window.slots
+    return type(rows) == "table" and rows or nil
+end
+
+local function ForEachRow(rows, fn)
+    if rows then
+        for _, row in ipairs(rows) do fn(row) end
+    end
+end
+
 -- fn(row) for each row of the loot window: Blizzard's scroll list, older
--- clients' numbered buttons, or Plumber's rows.
+-- clients' numbered buttons, Plumber's or XLoot's rows.
 local function ForEachLootButton(fn)
     if LootFrame:IsShown() then
         if LootFrame.ScrollBox and LootFrame.ScrollBox.ForEachFrame then
@@ -258,13 +271,12 @@ local function ForEachLootButton(fn)
             end
         end
     end
-    local rows = PlumberRows()
-    if rows then
-        for _, row in ipairs(rows) do fn(row) end
-    end
+    ForEachRow(PlumberRows(), fn)
+    ForEachRow(XLootRows(), fn)
 end
 
--- The loot slot a row shows (a Plumber row keeps it in its data).
+-- The loot slot a row shows (a Plumber row keeps it in its data, an XLoot
+-- row in its slot field).
 local function LootSlotOf(button)
     if button.GetSlotIndex then return button:GetSlotIndex() end
     local plumber = PlumberLootWindow
@@ -286,10 +298,11 @@ local function UpdateLootMark(button)
         return
     end
     if not mark then
-        -- Plumber's icon is a frame of its own, drawn over its row.
-        mark = (button.IconFrame or button):CreateTexture(nil, "OVERLAY", nil, 7)
+        -- Plumber's and XLoot's icons are frames of their own, drawn over their rows.
+        local icon = button.IconFrame or button.frame_item
+        mark = (icon or button):CreateTexture(nil, "OVERLAY", nil, 7)
         mark:SetSize(18, 18)
-        mark:SetPoint("CENTER", button.Item or button.IconFrame or button, "TOPRIGHT", -4, -4)
+        mark:SetPoint("CENTER", button.Item or icon or button, "TOPRIGHT", -4, -4)
         mark:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon") -- the money display's gold coin
         lootMarks[button] = mark
     end
@@ -431,20 +444,25 @@ end
 -- Plumber lays out its rows each time it fills them (the loot opening, a
 -- failed auto loot, ...).
 local function OnPlumberLayout()
-    if not ns.db then return end
-    local rows = PlumberRows()
-    if rows then
-        for _, row in ipairs(rows) do UpdateLootMark(row) end
-    end
+    if ns.db then ForEachRow(PlumberRows(), UpdateLootMark) end
 end
 
--- Once, when the loot window exists (Plumber loads after LootTriage).
-local lootRowsHooked, plumberHooked = false, false
+-- XLoot fills its rows in its window's Update.
+local function OnXLootUpdate()
+    if ns.db then ForEachRow(XLootRows(), UpdateLootMark) end
+end
+
+-- Once, when the loot window exists (Plumber and XLoot load after LootTriage).
+local lootRowsHooked, plumberHooked, xlootHooked = false, false, false
 local function HookLootRows()
     if not plumberHooked and type(PlumberLootWindow) == "table"
         and type(PlumberLootWindow.LayoutActiveFrames) == "function" then
         hooksecurefunc(PlumberLootWindow, "LayoutActiveFrames", OnPlumberLayout)
         plumberHooked = true
+    end
+    if not xlootHooked and type(XLootFrame) == "table" and type(XLootFrame.Update) == "function" then
+        hooksecurefunc(XLootFrame, "Update", OnXLootUpdate)
+        xlootHooked = true
     end
     if lootRowsHooked or not LootFrame or not LootFrame.ScrollBox then return end
     if ScrollUtil and ScrollUtil.AddInitializedFrameCallback then

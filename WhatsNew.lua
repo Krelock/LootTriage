@@ -7,6 +7,24 @@ local ipairs = ipairs
 -- Newest version first; one without a version uses the .toc's. An item is
 -- { name (in gold), what it does }, or a line.
 local WHATS_NEW = {
+    { version = "1.2.1",
+        { "New", {
+            { "Baganator junk (nothing to set).", "With Baganator, the items LootTriage highlights are its junk: Baganator's Junk category, junk search and junk coin follow the highlights. Raise Junk's priority in Baganator's categories to put them first. Baganator switches to LootTriage's junk by itself; pick another one in Baganator's settings to go back to gray items." },
+            { "XLoot (nothing to set).", "The gold coins and the loot's tooltip line show in XLoot's loot window too." },
+            { "Mark items (off by default).", "A small icon on the items in your bags that LootTriage keeps: Quest items puts the quest ! on items kept for a quest, Every kept item also marks what the Never highlight settings keep. On the LootTriage page." },
+            { "Tooltip lines (on by default).", "Turn it off to keep LootTriage's lines out of item tooltips. The delete button still says what it deletes. On the LootTriage page." },
+            { "More Never highlight settings (see each one's default).", "Bags and quivers and Arrows and bullets (on), Bind-on-equip gear (off), and Only for your professions under Crafting reagents (off): only the materials your professions use are kept. On the Never highlight page." },
+        } },
+        { "Changes", {
+            "Mark quest items is now the Quest items choice of Mark items, on the LootTriage page (on if you had it on).",
+            "Items for quests in your log is on for new installs.",
+            "Consumables is split into Potions and elixirs, Food and drink, Bandages, Scrolls and Other consumables, and Weapons and armor into Gear you can use and Bind-on-equip gear. They start as before.",
+            "The settings window uses less memory: each page is made when you first open it.",
+        } },
+        { "Fixes", {
+            "With bag addons that show their bags a moment after you open them, like DaylightUI's, the highlights now show when you open your bags with the key.",
+        } },
+    },
     { version = "1.2.0",
         { "New", {
             { "Why it's kept (nothing to set).", "Hover an item in your bags that LootTriage never suggests and the tooltip says why, like profession tool, spell reagent, consumable or can't be sold." },

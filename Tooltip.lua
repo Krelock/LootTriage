@@ -44,6 +44,12 @@ end
 local function AddTooltipLine(tooltip, data)
     if tooltip ~= GameTooltip or not ns.db then return end
     local owner = tooltip:GetOwner()
+    -- With Tooltip lines off, only the delete button says what it deletes.
+    if not ns.db.tooltipLines then
+        local deleteLine, r, g, b = owner and DeleteButtonLine(owner)
+        if deleteLine then tooltip:AddLine(deleteLine, r, g, b, true) end
+        return
+    end
     local inBags = owner ~= nil and hookedBagButtons[owner] ~= nil
 
     local itemID = data and data.id
@@ -112,7 +118,7 @@ local function AddTooltipLine(tooltip, data)
     end
 
     if not loot.session or next(lootPairs) == nil then return end
-    if not (IsInside(owner, LootFrame) or IsInside(owner, PlumberLootWindow)) then return end
+    if not (IsInside(owner, LootFrame) or IsInside(owner, PlumberLootWindow) or IsInside(owner, XLootFrame)) then return end
     local lootSlot = LootSlotOf(owner) or (owner:GetParent() and LootSlotOf(owner:GetParent()))
     local pair = lootSlot and lootPairs[lootSlot]
     if not pair or not pair.worth or not PairValid(pair) then return end

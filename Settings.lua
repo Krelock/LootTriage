@@ -12,6 +12,7 @@ local min = math.min
 local IS_RETAIL, defaults, KEEP_CLICKS, KEEP_CLICK_OFF = ns.IS_RETAIL, ns.defaults, ns.KEEP_CLICKS, ns.KEEP_CLICK_OFF
 local SHOW_OFF, SHOW_LOOTING, SHOW_NEARLY_FULL, SHOW_ALWAYS = ns.SHOW_OFF, ns.SHOW_LOOTING, ns.SHOW_NEARLY_FULL, ns.SHOW_ALWAYS
 local SORT_OFF, SORT_BOTTOM_RIGHT, SORT_TOP_LEFT = ns.SORT_OFF, ns.SORT_BOTTOM_RIGHT, ns.SORT_TOP_LEFT
+local MARK_OFF, MARK_QUESTS, MARK_ALL = ns.MARK_OFF, ns.MARK_QUESTS, ns.MARK_ALL
 local candidates, Print, ValueText, ItemIDFromLink = ns.candidates, ns.Print, ns.ValueText, ns.ItemIDFromLink
 local PREVIEW_SECONDS, StartPreview, Rebuild, SetKeep = ns.PREVIEW_SECONDS, ns.StartPreview, ns.Rebuild, ns.SetKeep
 local OnOptionsChanged, ShowWhatsNew = ns.OnOptionsChanged, ns.ShowWhatsNew
@@ -36,6 +37,7 @@ end
 
 local QUALITY_NAMES = { [0] = "Grays only", [1] = "Grays + whites", [2] = "Grays + whites + greens" }
 local SORT_NAMES = { [SORT_OFF] = "Off", [SORT_BOTTOM_RIGHT] = "Bottom right", [SORT_TOP_LEFT] = "Top left" }
+local MARK_NAMES = { [MARK_OFF] = "Off", [MARK_QUESTS] = "Quest items", [MARK_ALL] = "Every kept item" }
 local SHOW_NAMES = {
     [SHOW_OFF] = "Off",
     [SHOW_LOOTING] = "While looting with full bags",
@@ -86,21 +88,46 @@ local SETTINGS = {
             .. GONE_FOR_GOOD },
     { header = "Bags" },
     { kind = "dropdown", key = "keepClick", name = "Click in bags", choices = KeepClickChoices,
-        tip = "Click an item in your bags this way to give it a gold border: it will never be suggested for deletion. Click again to undo. Note: in the default game, Ctrl+click also previews gear in the dressing room." },
+        tip = "Click an item in your bags this way and it's never suggested for deletion (it gets a gold border). Click again to undo." },
+    { kind = "dropdown", key = "markItems", name = "Mark items", choices = Choices(MARK_NAMES, MARK_OFF, MARK_ALL),
+        tip = "A small icon on items LootTriage keeps: the quest ! on quest items, or an icon for every kind it keeps." },
+    { kind = "checkbox", key = "tooltipLines", name = "Tooltip lines",
+        tip = "LootTriage's lines in item tooltips, like the delete number and why an item is kept." },
 
     { page = "Never highlight" },
-    { kind = "checkbox", key = "keepConsumables", name = "Consumables",
-        tip = "Potions, elixirs, flasks, food, drink, bandages and scrolls." },
+    { header = "Consumables" },
+    { kind = "checkbox", key = "keepPotions", name = "Potions and elixirs",
+        tip = "Potions, elixirs and flasks." },
+    { kind = "checkbox", key = "keepFood", name = "Food and drink",
+        tip = "Food and drink, buff food too." },
+    { kind = "checkbox", key = "keepBandages", name = "Bandages",
+        tip = "Linen Bandage and the other first aid bandages." },
+    { kind = "checkbox", key = "keepScrolls", name = "Scrolls",
+        tip = "Scroll of Stamina, Scroll of Intellect and the other scrolls." },
+    { kind = "checkbox", key = "keepConsumables", name = "Other consumables",
+        tip = "Every other consumable: sharpening stones, weightstones, oils, explosives and the like." },
+    { header = "Gear" },
+    { kind = "checkbox", key = "keepUsableGear", name = "Gear you can use",
+        tip = "Weapons and armor your class can wear or wield, whatever their level." },
+    { kind = "checkbox", key = "keepBoEGear", name = "Bind-on-equip gear",
+        tip = "Weapons and armor that bind when equipped and aren't bound to you yet, for the auction house or a friend." },
+    { column = 2 },
+    { header = "Crafting" },
     { kind = "checkbox", key = "keepReagents", name = "Crafting reagents",
         tip = "Cloth, herbs, ore, leather and other crafting materials." },
+    { kind = "checkbox", key = "reagentsMyProfessions", name = "Only for your professions", forever = true,
+        tip = "With Crafting reagents on, only keep materials your professions use, like cloth for tailoring or herbs for alchemy." },
     { kind = "checkbox", key = "keepSpellReagents", name = "Spell reagents",
         tip = "Rune of Teleportation, Light Feather, Flash Powder, Symbol of Divinity and other items spells use up." },
     { kind = "checkbox", key = "keepTools", name = "Profession tools",
         tip = "Mining Pick, Blacksmith Hammer, Skinning Knife, fishing poles, enchanting rods, Flint and Tinder, etc." },
     { kind = "checkbox", key = "keepRecipes", name = "Recipes",
         tip = "Recipes, patterns, plans, formulas and schematics." },
-    { kind = "checkbox", key = "keepEquipment", name = "Weapons and armor",
-        tip = "Gear you might want to wear, sell or disenchant." },
+    { header = "Bags and ammo" },
+    { kind = "checkbox", key = "keepBags", name = "Bags and quivers",
+        tip = "Bags, profession bags, quivers and ammo pouches." },
+    { kind = "checkbox", key = "keepAmmo", name = "Arrows and bullets",
+        tip = "Arrows and bullets for your ranged weapon." },
 
     -- The list of quests not picked up yet is only used on WoW Forever.
     { page = "Quests" },
@@ -119,14 +146,12 @@ local SETTINGS = {
     { header = "Other" },
     { kind = "checkbox", key = "leftoverQuestItems", name = "Leftover quest items",
         tip = "Quest items you don't need anymore, because you've done their quests, can be suggested for deletion. They're usually ones a vendor won't buy." },
-    { kind = "checkbox", key = "questMark", name = "Mark quest items",
-        tip = "Puts a small quest ! on items in your bags that the settings above keep for a quest." },
 
     { page = "Sorting" },
     { kind = "dropdown", key = "sortCorner", name = "Junk after sorting", choices = Choices(SORT_NAMES, SORT_OFF, SORT_TOP_LEFT),
         tip = "After you hit sort, your junk gets moved to the bottom right, cheapest in the last slot. Top left puts it in the top left instead, cheapest in the first slot." },
     { kind = "checkbox", key = "closeGaps", name = "Close gaps after sorting",
-        tip = "After your junk is moved, your other items move up too, so no empty slots are left between them. They keep the order the sort gave them. Takes a little longer. Not used when Junk after sorting is Off." },
+        tip = "After your junk is moved, your other items move up so no empty slots are left between them." },
 
     { page = "Auction prices" },
     { kind = "checkbox", key = "auctionPrices", name = "Auction prices", needsPrice = true,

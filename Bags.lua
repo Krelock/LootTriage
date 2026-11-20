@@ -1,8 +1,8 @@
 -- LootTriage in your bags: the highlight (a gold glow and a number) on what to
--- delete, the gold border on items you keep and the quest mark, on Blizzard's bag
--- buttons and on bag addons' buttons made from Blizzard's template.
+-- delete, the gold border on items you keep and the marks on kept items, on
+-- Blizzard's bag buttons and on bag addons' buttons made from Blizzard's template.
 --
--- Sections: Glow, Bag windows, Kept items and quest marks, Highlights.
+-- Sections: Glow, Bag windows, Kept items and marks, Highlights.
 local _, ns = ...
 
 local GetContainerItemInfo = C_Container.GetContainerItemInfo
@@ -19,7 +19,8 @@ local SHOW_OFF, SHOW_NEARLY_FULL, SHOW_ALWAYS, NEARLY_FULL_SLOTS = ns.SHOW_OFF, 
 local loot, lootPairs, candidates = ns.loot, ns.lootPairs, ns.candidates
 local SlotKey, NormalBags, FreeSlots = ns.SlotKey, ns.NormalBags, ns.FreeSlots
 local WaitForItemInfo, ScanBags = ns.WaitForItemInfo, ns.ScanBags
-local NeededForQuest = ns.NeededForQuest
+local NeededForQuest, IsProtected = ns.NeededForQuest, ns.IsProtected
+local MARK_OFF, MARK_ALL = ns.MARK_OFF, ns.MARK_ALL
 
 local rankBySlot = {}  -- [slotKey] = the number shown
 local entryBySlot = {} -- [slotKey] = its candidate or loot pair, for the tooltip
@@ -126,7 +127,7 @@ end
 
 local addonButtons = setmetatable({}, { __mode = "k" }) -- [button] = true
 local otherBags = false -- a bag addon has made item buttons
-local QueueRebuild      -- (Highlights)
+local QueueRebuild, TellBaganator -- (Highlights)
 
 local blizzardBagFrames = {}
 if ContainerFrameCombinedBags then blizzardBagFrames[ContainerFrameCombinedBags] = true end
@@ -135,12 +136,19 @@ for i = 1, (NUM_CONTAINER_FRAMES or 13) do
     if f then blizzardBagFrames[f] = true end
 end
 
--- A template button made outside Blizzard's windows is a bag addon's.
+local function OnAddonButtonShown()
+    if ns.db then QueueRebuild() end
+end
+
+-- A template button made outside Blizzard's windows is a bag addon's. Some bag
+-- addons show their window a frame after the bags were opened, so a button
+-- coming into view draws the highlights again.
 local function OnBagButtonCreated(button)
     if blizzardBagFrames[button:GetParent()] then return end
     addonButtons[button] = true
     otherBags = true
-    if ns.db then QueueRebuild() end -- drawn on once the addon has set it up
+    button:HookScript("OnShow", OnAddonButtonShown)
+    OnAddonButtonShown() -- drawn on once the addon has set it up
 end
 
 if ContainerFrameItemButtonMixin and ContainerFrameItemButtonMixin.OnLoad then
@@ -223,7 +231,7 @@ local function ForEachBagButton(fn)
 end
 
 ---------------------------------------------------------------------------
--- Kept items and quest marks
+-- Kept items and marks
 ---------------------------------------------------------------------------
 
 local keepBorders = {} -- [bag button] = gold border texture
@@ -292,31 +300,56 @@ local function ShowKeepBorder(button)
     border:Show()
 end
 
--- Mark quest items: Blizzard's quest "!" where a highlight's number would go (a
--- kept item is never highlighted), not on the game's own quest items.
-local questMarks = {}  -- [bag button] = texture
+-- Mark items: Blizzard's quest "!" where a highlight's number would go (a kept
+-- item is never highlighted), not on the game's own quest items, which have
+-- Blizzard's border. With every kept item, a profession icon for each kind.
+local KIND_MARKS = {
+    ["crafting material"] = "worldquest-icon-tailoring",
+    ["spell reagent"] = "worldquest-icon-enchanting",
+    ["profession tool"] = "worldquest-icon-blacksmithing",
+    ["potion or elixir"] = "worldquest-icon-alchemy",
+    ["food or drink"] = "worldquest-icon-cooking",
+    ["bandage"] = "worldquest-icon-firstaid",
+    ["scroll"] = "worldquest-icon-alchemy",
+    ["consumable"] = "worldquest-icon-alchemy",
+    ["recipe"] = "worldquest-icon-inscription",
+    ["gear you can use"] = "Mobile-CombatIcon",
+    ["bind-on-equip gear"] = "Mobile-CombatIcon",
+    ["bag or quiver"] = "worldquest-icon-leatherworking",
+    ["ammo"] = "Mobile-CombatIcon",
+}
+local itemMarks = {}  -- [bag button] = texture
 
-local function UpdateQuestMark(button, bag, slot, itemID)
+-- The atlas a bag item is marked with, or nil.
+local function MarkAtlas(bag, slot, itemID, isBound)
     local quest = GetContainerItemQuestInfo(bag, slot)
     if quest and (quest.isQuestItem or quest.questID) then return end
-    local name, _, _, _, _, _, _, _, _, _, _, _, _, bindType = GetItemInfo(itemID)
+    local name, _, _, _, _, _, _, _, _, _, _, classID, subclassID, bindType, _, _, isCraftingReagent = GetItemInfo(itemID)
     if not name then
         WaitForItemInfo(itemID)
         return
     end
-    if bindType == 4 or not NeededForQuest(itemID, name) then return end
-    local mark = questMarks[button]
+    if bindType ~= 4 and NeededForQuest(itemID, name) then return "QuestNormal" end
+    if ns.db.markItems == MARK_ALL then
+        return KIND_MARKS[IsProtected(itemID, classID, subclassID, isCraftingReagent, bindType, isBound)]
+    end
+end
+
+local function UpdateItemMark(button, bag, slot, info)
+    local atlas = MarkAtlas(bag, slot, info.itemID, info.isBound)
+    if not atlas then return end
+    local mark = itemMarks[button]
     if not mark then
         mark = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        mark:SetAtlas("QuestNormal")
-        mark:SetSize(16, 16)
+        mark:SetSize(13, 13)
         mark:SetPoint("TOPLEFT", 1, -1)
-        questMarks[button] = mark
+        itemMarks[button] = mark
     end
+    mark:SetAtlas(atlas)
     mark:Show()
 end
 
--- One bag button: its highlight, gold border and quest mark.
+-- One bag button: its highlight, gold border and mark.
 local function UpdateBagButton(button, bag, slot)
     -- The bags make buttons as they need them, so each is hooked when it's seen.
     HookBagButton(button)
@@ -331,10 +364,11 @@ local function UpdateBagButton(button, bag, slot)
         o.entry = entryBySlot[key]
         o:Show()
     end
-    if anyKept or ns.db.questMark then
+    local marking = ns.db.markItems ~= MARK_OFF
+    if anyKept or marking then
         local info = GetContainerItemInfo(bag, slot)
         if info and ns.db.keep[info.itemID] then ShowKeepBorder(button) end
-        if info and ns.db.questMark then UpdateQuestMark(button, bag, slot, info.itemID) end
+        if info and marking then UpdateItemMark(button, bag, slot, info) end
     end
 end
 
@@ -345,7 +379,7 @@ local function RefreshOverlays()
         o.entry = nil
     end
     for _, border in pairs(keepBorders) do border:Hide() end
-    for _, mark in pairs(questMarks) do mark:Hide() end
+    for _, mark in pairs(itemMarks) do mark:Hide() end
     anyKept = next(ns.db.keep) ~= nil
     ForEachBagButton(UpdateBagButton)
     if otherBags then ForEachAddonButton(UpdateBagButton) end
@@ -396,6 +430,37 @@ local function ApplyPreview()
     end
 end
 
+-- Baganator: LootTriage as its junk plugin, so its Junk category, junk search
+-- and junk coin follow the highlights. Baganator asks per slot while it lays out
+-- the bags; when the highlighted slots change it's asked to look again.
+local baganatorAPI
+local toldBaganator = {} -- [slotKey] = true: highlighted when Baganator last looked
+
+local function IsBaganatorJunk(bag, slot)
+    return entryBySlot[SlotKey(bag, slot)] ~= nil
+end
+
+TellBaganator = function()
+    if not baganatorAPI then return end
+    local changed = false
+    for key in pairs(entryBySlot) do
+        if not toldBaganator[key] then changed = true break end
+    end
+    for key in pairs(toldBaganator) do
+        if not entryBySlot[key] then changed = true break end
+    end
+    if not changed then return end
+    wipe(toldBaganator)
+    for key in pairs(entryBySlot) do toldBaganator[key] = true end
+    pcall(baganatorAPI.RequestItemButtonsRefresh)
+end
+
+local function HookBaganator()
+    local api = type(Baganator) == "table" and type(Baganator.API) == "table" and Baganator.API
+    if not api or type(api.RegisterJunkPlugin) ~= "function" or type(api.RequestItemButtonsRefresh) ~= "function" then return end
+    if pcall(api.RegisterJunkPlugin, "LootTriage", "loottriage", IsBaganatorJunk) then baganatorAPI = api end
+end
+
 local function ApplyHighlights()
     wipe(rankBySlot)
     wipe(entryBySlot)
@@ -418,6 +483,7 @@ local function ApplyHighlights()
         end
     end
     RefreshOverlays()
+    TellBaganator()
 end
 
 local function Rebuild()
@@ -466,3 +532,4 @@ ns.GOLD_R, ns.GOLD_G, ns.GOLD_B, ns.PREVIEW_SECONDS = GOLD_R, GOLD_G, GOLD_B, PR
 ns.CollectContainerFrames, ns.HookContainerFrames, ns.ForEachBagButton = CollectContainerFrames, HookContainerFrames, ForEachBagButton
 ns.BagsOpen, ns.OtherBagsInUse, ns.PairValid, ns.SetKeep, ns.ButtonSlot = BagsOpen, OtherBagsInUse, PairValid, SetKeep, ButtonSlot
 ns.StartPreview, ns.ApplyHighlights, ns.Rebuild, ns.QueueRebuild = StartPreview, ApplyHighlights, Rebuild, QueueRebuild
+ns.HookBaganator = HookBaganator
